@@ -106,6 +106,8 @@ That page contains a warning callout and compact JSONL code blocks with one reco
 
 When a new Markdown page is created, the action immediately appends a sync-state record to this Notion page before uploading the Markdown content. This prevents duplicate page creation when a later workflow run starts before any repository PR or branch update could be merged.
 
+If the sync-state page does not have a record yet, the action first tries to match an existing child page by the generated Notion page title. Matching only happens for unique child page titles; duplicate titles are ignored to avoid attaching a Markdown file to the wrong page.
+
 ### 2) Private Markdown Files
 
 By default, markdown files whose file name starts with `_` are skipped.

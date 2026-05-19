@@ -124,6 +124,15 @@ async function run(): Promise<void> {
           pageUrl = undefined;
         }
 
+        if (!pageId) {
+          const matchedPageId = syncState.childPageIdsByTitle.get(pageTitle);
+          if (matchedPageId) {
+            pageId = matchedPageId;
+            pageUrl = notionPageUrl(matchedPageId);
+            documentLog.info(`Matched existing Notion child page by generated title: ${pageTitle}`);
+          }
+        }
+
         if (pageId) {
           if (
             existingSyncStateEntry?.sourceHash === documentEntry.sourceHash &&
@@ -177,6 +186,7 @@ async function run(): Promise<void> {
           const created = await createPage(notion, pagesParentId, pageTitle);
           pageId = normalizeNotionId(created.id);
           syncState.childPageIds.add(pageId);
+          syncState.childPageIdsByTitle.set(pageTitle, pageId);
           pageUrl = created.url || notionPageUrl(pageId);
           documentLog.info(`Created page: ${pageTitle}`);
           if (pageUrl) {

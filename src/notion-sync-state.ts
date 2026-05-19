@@ -28,6 +28,7 @@ type SyncStateRecord = {
 
 export type SyncStateHandle = {
   childPageIds: Set<string>;
+  childPageIdsByTitle: Map<string, string>;
   entries: Map<string, SyncStateEntry>;
   pageId: string;
 };
@@ -39,22 +40,24 @@ export async function loadSyncState(
 ): Promise<SyncStateHandle> {
   const parentChildren = await listAllChildren(notion, parentPageId);
   const childPageIds = collectChildPageIds(parentChildren);
+  const childPageIdsByTitle = collectUniqueChildPageIdsByTitle(parentChildren, logContext);
   const existingPageId = findSyncStatePageId(parentChildren, logContext);
   if (existingPageId) {
     const entries = await readSyncStateEntries(notion, existingPageId, logContext);
     logContext.info(`Loaded ${entries.size} sync state records from Notion.`);
-    return { childPageIds, entries, pageId: existingPageId };
+    return { childPageIds, childPageIdsByTitle, entries, pageId: existingPageId };
   }
 
   const created = await createPage(notion, parentPageId, SYNC_STATE_PAGE_TITLE);
   const pageId = normalizeNotionId(created.id);
   childPageIds.add(pageId);
+  childPageIdsByTitle.set(SYNC_STATE_PAGE_TITLE, pageId);
   logContext.info(`Created sync state page: ${SYNC_STATE_PAGE_TITLE}`);
   if (created.url) {
     logContext.info(`Sync state page URL: ${created.url}`);
   }
   await writeSyncState(notion, pageId, new Map(), logContext);
-  return { childPageIds, entries: new Map(), pageId };
+  return { childPageIds, childPageIdsByTitle, entries: new Map(), pageId };
 }
 
 export async function appendSyncStateRecord(
@@ -126,6 +129,51 @@ function getChildPageId(block: PartialBlockObjectResponse): string | null {
   return normalizeNotionId(block.id);
 }
 
+function collectUniqueChildPageIdsByTitle(
+  children: PartialBlockObjectResponse[],
+  logContext: LogContext,
+): Map<string, string> {
+  const pageIdsByTitle = new Map<string, string>();
+  const duplicatedTitles = new Set<string>();
+
+  for (const child of children) {
+    const title = getChildPageTitle(child);
+    const pageId = getChildPageId(child);
+    if (!title || !pageId) {
+      continue;
+    }
+
+    if (pageIdsByTitle.has(title)) {
+      pageIdsByTitle.delete(title);
+      duplicatedTitles.add(title);
+      continue;
+    }
+    if (!duplicatedTitles.has(title)) {
+      pageIdsByTitle.set(title, pageId);
+    }
+  }
+
+  if (duplicatedTitles.size > 0) {
+    logContext.warn(
+      `Ignoring ${duplicatedTitles.size} duplicate child page title(s) when matching existing pages to markdown files.`,
+    );
+  }
+
+  return pageIdsByTitle;
+}
+
+function getChildPageTitle(block: PartialBlockObjectResponse): string | null {
+  if (!("type" in block) || block.type !== "child_page") {
+    return null;
+  }
+  if (!("child_page" in block) || typeof block.child_page !== "object" || !block.child_page) {
+    return null;
+  }
+
+  const childPage = block.child_page as { title?: unknown };
+  return typeof childPage.title === "string" ? childPage.title : null;
+}
+
 function isSyncStateChildPage(
   block: PartialBlockObjectResponse,
 ): block is PartialBlockObjectResponse & {
@@ -133,15 +181,7 @@ function isSyncStateChildPage(
   id: string;
   type: "child_page";
 } {
-  if (!("type" in block) || block.type !== "child_page") {
-    return false;
-  }
-  if (!("child_page" in block) || typeof block.child_page !== "object" || !block.child_page) {
-    return false;
-  }
-
-  const childPage = block.child_page as { title?: unknown };
-  return childPage.title === SYNC_STATE_PAGE_TITLE && "id" in block && typeof block.id === "string";
+  return getChildPageTitle(block) === SYNC_STATE_PAGE_TITLE && getChildPageId(block) !== null;
 }
 
 async function readSyncStateEntries(
