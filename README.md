@@ -134,8 +134,6 @@ That page contains a warning callout and compact JSONL code blocks with one reco
 
 When a new Markdown page is created, the action immediately appends a sync-state record to this Notion page before uploading the Markdown content. This prevents duplicate page creation when a later workflow run starts before any repository PR or branch update could be merged.
 
-The old `_notion_links.md` file is no longer used. If your repository already has one, delete it manually or leave it ignored by the default private markdown prefix.
-
 ### 2) Private Markdown Files
 
 By default, markdown files whose file name starts with `_` are skipped.
@@ -143,7 +141,6 @@ By default, markdown files whose file name starts with `_` are skipped.
 Examples skipped by default:
 
 ```text
-docs/_notion_links.md
 docs/_draft.md
 docs/platform/_internal.md
 ```
@@ -256,14 +253,9 @@ In GitHub Actions it checks the latest commit for that file via the GitHub commi
 
 If the GitHub API lookup is unavailable, it falls back to local `git log`, which may require enough local history to reach the file's last change.
 
-### "My `_notion_links.md` file is not syncing"
-
-Files whose names start with `_` are skipped by default. Set `private_markdown_prefix: "null"` if you want underscore-prefixed markdown files to sync.
-
 ## Behavior Notes
 
 - The Notion sync-state page is the source of truth for page IDs and hashes.
-- `_notion_links.md` is not read, written, or migrated.
 - The index link list after `page_block_id` is replaced each run (contiguous `link_to_page` blocks only).
 - Pages are skipped when the source hash is unchanged.
 - Pages are also skipped when Notion is newer than the last Git commit time.
