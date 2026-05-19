@@ -30,8 +30,6 @@ This action:
 
 4. **Add a GitHub workflow**
 
-Example using `page_id`:
-
 ```yaml
 name: Sync Docs to Notion
 
@@ -55,43 +53,17 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           notion_token: ${{ secrets.NOTION_TOKEN }}
+
+          # Use either page_id or page_block_id.
+          # page_id creates pages under this Notion page.
           page_id: ${{ secrets.NOTION_PAGE_ID }}
+          # page_block_id creates pages under the block's parent page and inserts shortcut links after this block.
+          # page_block_id: ${{ secrets.NOTION_PAGE_BLOCK_ID }}
+
           # Optional: folder containing markdown files (default: docs)
           docs_folder: docs
           # Optional: skip markdown files whose file name starts with this prefix (default: _)
           private_markdown_prefix: "_"
-          # Optional: separator used between folder names and title (default: →)
-          title_prefix_separator: "→"
-```
-
-Example using `page_block_id` only:
-
-```yaml
-name: Sync Docs to Notion
-
-on:
-  push:
-    branches:
-      - "main"
-    paths:
-      - "docs/**"
-
-permissions:
-  contents: read
-
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Sync markdown to Notion
-        uses: cvscarlos/markdown-to-notion-action@v1
-        with:
-          notion_token: ${{ secrets.NOTION_TOKEN }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          page_block_id: ${{ secrets.NOTION_PAGE_BLOCK_ID }}
-          # Optional: folder containing markdown files (default: docs)
-          docs_folder: docs
           # Optional: separator used between folder names and title (default: →)
           title_prefix_separator: "→"
 ```
