@@ -49,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Sync markdown to Notion
-        uses: cvscarlos/markdown-to-notion-action@v1
+        uses: cvscarlos/markdown-to-notion-action@v2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           notion_token: ${{ secrets.NOTION_TOKEN }}
@@ -175,8 +175,8 @@ A rename is treated the same as delete + create because the action cannot safely
 This repository uses Git tags for versions. GitHub does not always show tag labels on the commits list, so use the Tags page to find the latest version:
 
 - GitHub → **Releases → Tags** or **Code → Tags**
-- The manual release workflow attempts to move the floating `v1` tag to the latest `v1.x.x` release.
-- If that step fails or GitHub keeps the wrong ref cached, run `./.github/update-v1-tag.sh` locally as a fallback.
+- The manual release workflow attempts to move the floating `v2` tag to the latest `v2.x.x` release.
+- If that step fails or GitHub keeps the wrong ref cached, run `./.github/update-v2-tag.sh` locally as a fallback.
 
 ## Notion ID Tips
 
@@ -201,7 +201,7 @@ To get a block ID:
 - `npm run knip`
 - `npm run precommit`
 - `npm run hooks:install` to enable the local Git pre-commit hook
-- `./.github/update-v1-tag.sh`
+- `./.github/update-v2-tag.sh`
 
 ## Troubleshooting
 
