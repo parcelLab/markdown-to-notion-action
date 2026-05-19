@@ -9,7 +9,7 @@ export type MarkdownDocument = {
   notionUrl?: string;
 };
 
-export type MappingEntry = {
+export type SyncStateEntry = {
   pageId: string;
   sourceHash?: string;
   title?: string;

@@ -47,8 +47,3 @@ export function isInsidePath(rootPath: string, targetPath: string): boolean {
   const relativePath = path.relative(rootPath, targetPath);
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 }
-
-export function isSamePath(leftPath: string, rightPath: string): boolean {
-  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-  return path.resolve(leftPath) === path.resolve(rightPath);
-}

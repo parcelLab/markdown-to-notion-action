@@ -1,9 +1,5 @@
-import * as core from "@actions/core";
-
-export type CommitStrategy = "push" | "pr" | "none";
-
 export function readInput(name: string, envFallbacks: string[]): string {
-  const coreValue = core.getInput(name);
+  const coreValue = process.env[`INPUT_${name.toUpperCase()}`];
   if (coreValue) {
     return coreValue.trim();
   }
@@ -26,22 +22,13 @@ export function normalizeTitlePrefixSeparator(value: string): string {
   return trimmed;
 }
 
-export function normalizePrBranchPrefix(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "auto-notion-sync/";
+export function normalizePrivateMarkdownPrefix(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized) {
+    return "_";
   }
-  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
-}
-
-export function normalizeCommitStrategy(value: string): CommitStrategy {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized || normalized === "push") {
-    return "push";
+  if (["null", "none", "false"].includes(normalized.toLowerCase())) {
+    return null;
   }
-  if (normalized === "pr" || normalized === "none") {
-    return normalized;
-  }
-  core.warning(`Unknown commit_strategy '${value}', defaulting to 'push'.`);
-  return "push";
+  return normalized;
 }

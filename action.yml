@@ -14,7 +14,7 @@ inputs:
     default: "docs"
 
   notion_mapping_file:
-    description: "Path to the markdown table used to store notion_page_id mappings (default: <docs_folder>/_notion_links.md)"
+    description: "Deprecated and ignored. Sync state is stored in Notion."
     required: false
 
   page_block_id:
@@ -25,23 +25,26 @@ inputs:
     description: "Notion page ID where files will be created when page_block_id is not provided"
     required: false
 
+  private_markdown_prefix:
+    description: 'Markdown file name prefix to skip from Notion sync. Use "null" to disable.'
+    required: false
+    default: "_"
+
   title_prefix_separator:
     description: "Separator for title_prefix folder paths"
     required: false
     default: "→"
 
   commit_strategy:
-    description: "How to persist notion_page_id updates: 'push', 'pr' (default), or 'none'"
+    description: "Deprecated and ignored. Sync state is stored in Notion."
     required: false
-    default: "pr"
 
   pr_branch_prefix:
-    description: "Prefix for the PR branch when commit_strategy=pr"
+    description: "Deprecated and ignored. Sync state is stored in Notion."
     required: false
-    default: "auto-notion-sync/"
 
   github_token:
-    description: "GitHub token used to push commits or open PRs for notion_page_id updates"
+    description: "GitHub token used to read private repository files and file commit timestamps"
     required: false
 
 runs:
@@ -66,10 +69,8 @@ runs:
         ACTION_SOURCE_REF: ${{ github.action_ref }}
         INPUT_NOTION_TOKEN: ${{ inputs.notion_token }}
         INPUT_DOCS_FOLDER: ${{ inputs.docs_folder }}
-        INPUT_NOTION_MAPPING_FILE: ${{ inputs.notion_mapping_file }}
         INPUT_PAGE_BLOCK_ID: ${{ inputs.page_block_id }}
         INPUT_PAGE_ID: ${{ inputs.page_id }}
+        INPUT_PRIVATE_MARKDOWN_PREFIX: ${{ inputs.private_markdown_prefix }}
         INPUT_TITLE_PREFIX_SEPARATOR: ${{ inputs.title_prefix_separator }}
-        INPUT_COMMIT_STRATEGY: ${{ inputs.commit_strategy }}
-        INPUT_PR_BRANCH_PREFIX: ${{ inputs.pr_branch_prefix }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github_token }}

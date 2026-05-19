@@ -5,9 +5,10 @@ Sync a folder of Markdown files to Notion pages and optionally maintain an index
 This action:
 
 - Creates or updates one Notion page per Markdown file.
-- Stores `notion_page_id` mappings and `source_hash` values in a separate markdown table file (default: `_notion_links.md`).
-- Archives stale Notion pages when their mapped Markdown file no longer exists, then removes the stale mapping row.
-- Adds optional shortcut links after an anchor block (optional).
+- Stores sync state inside Notion in a child page named `_Markdown to Notion Sync Data (do not edit)`.
+- Archives stale Notion pages when their Markdown file no longer exists.
+- Adds optional shortcut links after an anchor block.
+- Skips private Markdown files by file-name prefix, `_` by default.
 - Validates links to avoid Notion "Invalid URL" errors.
 
 ## Quick Start (Beginner)
@@ -42,9 +43,7 @@ on:
       - "docs/**"
 
 permissions:
-  contents: write
-  # Required when commit_strategy=pr
-  pull-requests: write
+  contents: read
 
 jobs:
   sync:
@@ -52,19 +51,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Sync markdown to Notion
-        uses: ./.github/actions/markdown-to-notion
+        uses: cvscarlos/markdown-to-notion-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           notion_token: ${{ secrets.NOTION_TOKEN }}
           page_id: ${{ secrets.NOTION_PAGE_ID }}
           # Optional: folder containing markdown files (default: docs)
           docs_folder: docs
+          # Optional: skip markdown files whose file name starts with this prefix (default: _)
+          private_markdown_prefix: "_"
           # Optional: separator used between folder names and title (default: →)
           title_prefix_separator: "→"
-          # Optional: pr (default), push, or none
-          commit_strategy: pr
-          # Optional: prefix for the PR branch (default: auto-notion-sync/)
-          pr_branch_prefix: "auto-notion-sync/"
 ```
 
 Example using `page_block_id` only:
@@ -80,9 +77,7 @@ on:
       - "docs/**"
 
 permissions:
-  contents: write
-  # Required when commit_strategy=pr
-  pull-requests: write
+  contents: read
 
 jobs:
   sync:
@@ -90,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Sync markdown to Notion
-        uses: ./.github/actions/markdown-to-notion
+        uses: cvscarlos/markdown-to-notion-action@v1
         with:
           notion_token: ${{ secrets.NOTION_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -99,58 +94,75 @@ jobs:
           docs_folder: docs
           # Optional: separator used between folder names and title (default: →)
           title_prefix_separator: "→"
-          # Optional: pr (default), push, or none
-          commit_strategy: pr
-          # Optional: prefix for the PR branch (default: auto-notion-sync/)
-          pr_branch_prefix: "auto-notion-sync/"
 ```
 
 ## Inputs
 
-| Input                    | Required | Description                                                                                                       |
-| ------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `notion_token`           | Yes      | Notion Integration Secret.                                                                                        |
-| `docs_folder`            | No       | Folder containing Markdown files (relative to the repository root). Default: `docs`.                              |
-| `notion_mapping_file`    | No       | Markdown file that stores page mappings. Default: `<docs_folder>/_notion_links.md`.                               |
-| `page_block_id`          | No       | Anchor block ID/URL. The action appends shortcut (`link_to_page`) blocks after this block.                        |
-| `page_id`                | No       | Parent page ID/URL for new pages. Pages are created at the end of the parent page (Notion API limitation).        |
-| `title_prefix_separator` | No       | Separator used between folder names and the title. Default: `→`.                                                  |
-| `commit_strategy`        | No       | How to persist `notion_page_id` updates: `pr` (default), `push`, or `none`.                                       |
-| `pr_branch_prefix`       | No       | Prefix for the PR branch when `commit_strategy=pr`. Default: `auto-notion-sync/`.                                 |
-| `github_token`           | No       | Required when `commit_strategy` is `push` or `pr`. Used to push commits or open PRs for `notion_page_id` updates. |
+| Input                     | Required | Description                                                                                                |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `notion_token`            | Yes      | Notion Integration Secret.                                                                                 |
+| `docs_folder`             | No       | Folder containing Markdown files (relative to the repository root). Default: `docs`.                       |
+| `page_block_id`           | No       | Anchor block ID/URL. The action appends shortcut (`link_to_page`) blocks after this block.                 |
+| `page_id`                 | No       | Parent page ID/URL for new pages. Pages are created at the end of the parent page (Notion API limitation). |
+| `private_markdown_prefix` | No       | Markdown file-name prefix to skip. Default: `_`. Set to `"null"`, `"none"`, or `"false"` to disable.       |
+| `title_prefix_separator`  | No       | Separator used between folder names and the title. Default: `→`.                                           |
+| `github_token`            | No       | Used to read private GitHub repository files for image uploads and file commit timestamps.                 |
 
 **Requirement:** You must provide either `page_block_id` **or** `page_id`.
+
+Deprecated inputs accepted for backward compatibility but ignored: `notion_mapping_file`, `commit_strategy`, `pr_branch_prefix`.
 
 ## How It Works
 
 ### 1) Identification
 
-Each `.md` file is parsed for frontmatter:
+The action uses Notion as the durable source of truth.
 
-- If `notion_page_id` exists (in the mapping file or frontmatter) → the page is updated.
-- If missing → a new Notion page is created and the mapping file is updated.
+On the first run, it creates a child page under the target parent:
 
-**Mapping file:** Instead of writing `notion_page_id` into each Markdown file, the action stores mappings in a separate markdown table (default: `_notion_links.md`). This avoids modifying your docs content and lets repeated runs skip unchanged files by comparing the stored `source_hash` locally before calling GitHub or Notion.
-
-If a path exists in `_notion_links.md` but the Markdown file no longer exists in `docs_folder`, the action treats that row as stale. It removes the row from `_notion_links.md` and archives the mapped Notion page. If the page was already deleted or archived manually in Notion, the action just removes the stale row and continues.
-
-Example mapping file (the `title` column links to the Notion page URL). The `title` column is generated only for human readers. The action does not use it for page identity or change detection:
-
-```markdown
-| path                         | notion_page_id                       | source_hash                                                      | title                                                                                 |
-| ---------------------------- | ------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| getting-started.md           | 7754cf02-251f-4bc9-ab2f-9cc897765336 | 8f0f3d3c1c2c0531c8dc37d975d6e7c1f6f1b0ed3e3618b2af896cb8da4f8a7f | [Getting Started](https://www.notion.so/7754cf02251f4bc9ab2f9cc897765336)             |
-| integrations/example-tags.md | 30c5e554-8603-8072-a733-d3bad8109a32 | 6e8a960b8a4e2ce4adac9b6f55b0b7159d4a6a7f7bfa815f6c0a3186fdcb1d06 | [integrations → Example Tags](https://www.notion.so/30c5e55486038072a733d3bad8109a32) |
+```text
+_Markdown to Notion Sync Data (do not edit)
 ```
 
-### 2) Title Selection
+That page contains a warning callout and compact JSONL code blocks with one record per Markdown file. The sync records store:
+
+- Markdown path
+- Notion page ID
+- source hash
+- page title
+- Notion URL
+
+When a new Markdown page is created, the action immediately appends a sync-state record to this Notion page before uploading the Markdown content. This prevents duplicate page creation when a later workflow run starts before any repository PR or branch update could be merged.
+
+The old `_notion_links.md` file is no longer used. If your repository already has one, delete it manually or leave it ignored by the default private markdown prefix.
+
+### 2) Private Markdown Files
+
+By default, markdown files whose file name starts with `_` are skipped.
+
+Examples skipped by default:
+
+```text
+docs/_notion_links.md
+docs/_draft.md
+docs/platform/_internal.md
+```
+
+To disable this behavior:
+
+```yaml
+with:
+  private_markdown_prefix: "null"
+```
+
+### 3) Title Selection
 
 The page title is chosen in this order:
 
 1. First Markdown H1 heading
 2. File name (without extension)
 
-### 3) Markdown to Notion Blocks
+### 4) Markdown to Notion Blocks
 
 Supported conversions include:
 
@@ -170,22 +182,22 @@ Supported conversions include:
 **Safety rules:**
 
 - Text is split into chunks ≤ 2000 characters.
+- Sync-state code blocks are kept below 1500 characters per block.
 - Links are validated. Invalid or relative links are dropped (text is preserved).
 
-### 4) Index Block (Optional)
+### 5) Index Block (Optional)
 
 If `page_block_id` is provided, the action replaces the contiguous `link_to_page` shortcut blocks **after** that block. The anchor block itself is not modified, and full pages are still created at the end of the parent page.
 
-### 5) Git Write-Back
+### 6) Deleted or Renamed Markdown Files
 
-If new pages are created (or page mappings change), the action persists the updated mapping file back to the repo based on `commit_strategy`:
+If a path exists in the Notion sync-state page but the Markdown file no longer exists in `docs_folder`, the action treats that path as stale.
 
-- Commit message: `chore: store notion page ids`
-- `push`: commits and pushes directly to the current branch.
-- `pr`: commits to a new branch and opens a PR.
-- `none`: skips any git updates.
-- `_notion_links.md` is formatted with Prettier before the git update step.
-- Uses the provided `github_token` for push/PR operations.
+- The stale Notion page is archived.
+- The stale sync-state record is removed.
+- If the page was already deleted or archived manually in Notion, the action just removes the stale record and continues.
+
+A rename is treated the same as delete + create because the action cannot safely know whether a missing path was renamed or deleted.
 
 ## Version Tags
 
@@ -224,27 +236,11 @@ To get a block ID:
 
 ### "Invalid URL for link"
 
-This action validates links and drops invalid/relative URLs instead of crashing. If you want relative links to resolve to Notion pages, make sure those files have already been synced so their `notion_page_id` exists in the mapping file.
+This action validates links and drops invalid/relative URLs instead of crashing. If you want relative links to resolve to Notion pages, make sure those files have already been synced so their page IDs exist in the Notion sync-state page.
 
 ### "Either page_block_id or page_id must be provided"
 
 Set one of the two inputs. `page_block_id` is only needed if you want links inserted after a specific block.
-
-### "Missing permissions" on push
-
-Ensure your workflow has:
-
-```yaml
-permissions:
-  contents: write
-```
-
-If you use `commit_strategy: pr`, also add:
-
-```yaml
-permissions:
-  pull-requests: write
-```
 
 ### "Not found" errors from Notion
 
@@ -252,17 +248,26 @@ Make sure the integration has access to the target page/block (Share → invite 
 
 ### "Nothing syncs even though I expected changes"
 
-The action skips syncing a page if Notion's `last_edited_time` is newer than the file's last commit time.
+The action skips syncing a page if its `source_hash` in the Notion sync-state page matches the current Markdown content.
+
+If the hash changed but Notion is newer than the file's last commit time, the action also skips syncing to avoid overwriting manual Notion edits.
 
 In GitHub Actions it checks the latest commit for that file via the GitHub commits API first, so a full clone is not required.
 
 If the GitHub API lookup is unavailable, it falls back to local `git log`, which may require enough local history to reach the file's last change.
 
+### "My `_notion_links.md` file is not syncing"
+
+Files whose names start with `_` are skipped by default. Set `private_markdown_prefix: "null"` if you want underscore-prefixed markdown files to sync.
+
 ## Behavior Notes
 
+- The Notion sync-state page is the source of truth for page IDs and hashes.
+- `_notion_links.md` is not read, written, or migrated.
 - The index link list after `page_block_id` is replaced each run (contiguous `link_to_page` blocks only).
-- Pages are skipped when Notion is newer than the last Git commit time.
-- If a mapped Markdown path is renamed or deleted, the old mapping row is removed. Its Notion page is archived unless that same page ID is still referenced by another active Markdown file.
+- Pages are skipped when the source hash is unchanged.
+- Pages are also skipped when Notion is newer than the last Git commit time.
+- If a Markdown path is renamed or deleted, the old Notion page is archived unless that same page ID is still referenced by another active Markdown file.
 - If a block append fails, the action logs a warning and continues.
 - HTML in Markdown is not preserved.
 

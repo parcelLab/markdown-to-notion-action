@@ -6,8 +6,6 @@ const execFileAsync = promisify(execFile);
 
 type CommandResult = { stdout: string; stderr: string };
 
-type Logger = (message: string) => void;
-
 async function runCommand(command: string, args: string[], cwd?: string): Promise<CommandResult> {
   const commandResult = await execFileAsync(command, args, {
     cwd,
@@ -17,73 +15,6 @@ async function runCommand(command: string, args: string[], cwd?: string): Promis
     stdout: commandResult.stdout?.toString() ?? "",
     stderr: commandResult.stderr?.toString() ?? "",
   };
-}
-
-export async function commitAndPush(
-  filePaths: string[],
-  message: string,
-  githubToken: string,
-  logger: Logger,
-  repoRoot?: string,
-): Promise<void> {
-  if (filePaths.length === 0) {
-    return;
-  }
-
-  await runCommand("git", ["add", "--", ...filePaths], repoRoot);
-  const status = await runCommand("git", ["status", "--porcelain", "--", ...filePaths], repoRoot);
-  if (status.stdout.trim().length === 0) {
-    logger("No git changes to commit.");
-    return;
-  }
-
-  await runCommand(
-    "git",
-    ["config", "user.email", "github-actions[bot]@users.noreply.github.com"],
-    repoRoot,
-  );
-  await runCommand("git", ["config", "user.name", "github-actions[bot]"], repoRoot);
-  await runCommand("git", ["commit", "-m", message], repoRoot);
-
-  await pushWithToken(githubToken, logger, repoRoot);
-}
-
-export async function commitAndPushToBranch(
-  filePaths: string[],
-  message: string,
-  githubToken: string,
-  branchName: string,
-  logger: Logger,
-  repoRoot?: string,
-  force = false,
-): Promise<boolean> {
-  if (filePaths.length === 0) {
-    return false;
-  }
-
-  await runCommand("git", ["checkout", "-B", branchName], repoRoot);
-  await runCommand("git", ["add", "--", ...filePaths], repoRoot);
-  const status = await runCommand("git", ["status", "--porcelain", "--", ...filePaths], repoRoot);
-  if (status.stdout.trim().length === 0) {
-    logger("No git changes to commit.");
-    return false;
-  }
-
-  await runCommand(
-    "git",
-    ["config", "user.email", "github-actions[bot]@users.noreply.github.com"],
-    repoRoot,
-  );
-  await runCommand("git", ["config", "user.name", "github-actions[bot]"], repoRoot);
-  await runCommand("git", ["commit", "-m", message], repoRoot);
-
-  await pushBranchWithToken(branchName, githubToken, logger, repoRoot, force);
-  return true;
-}
-
-export async function getCurrentBranch(repoRoot?: string): Promise<string> {
-  const branchResult = await runCommand("git", ["rev-parse", "--abbrev-ref", "HEAD"], repoRoot);
-  return branchResult.stdout.trim();
 }
 
 export async function getLastCommitTime(
@@ -168,71 +99,6 @@ async function getLastCommitTimeFromGitHubApi(
   } catch {
     return null;
   }
-}
-
-async function pushWithToken(
-  githubToken: string,
-  logger: Logger,
-  repoRoot?: string,
-): Promise<void> {
-  if (!githubToken) {
-    throw new Error("github_token is required to push changes back to the repository.");
-  }
-
-  const branchResult = await runCommand("git", ["rev-parse", "--abbrev-ref", "HEAD"], repoRoot);
-  const branch = branchResult.stdout.trim();
-  const remoteResult = await runCommand("git", ["remote", "get-url", "origin"], repoRoot);
-  const remoteUrl = remoteResult.stdout.trim();
-
-  const pushUrl = buildAuthRemoteUrl(remoteUrl, githubToken);
-  if (pushUrl) {
-    await runCommand("git", ["push", pushUrl, `HEAD:${branch}`], repoRoot);
-    logger(`Pushed updates to ${branch}.`);
-    return;
-  }
-
-  logger("Falling back to pushing via origin remote without token.");
-  await runCommand("git", ["push", "origin", branch], repoRoot);
-}
-
-async function pushBranchWithToken(
-  branchName: string,
-  githubToken: string,
-  logger: Logger,
-  repoRoot?: string,
-  force = false,
-): Promise<void> {
-  if (!githubToken) {
-    throw new Error("github_token is required to push changes back to the repository.");
-  }
-
-  const remoteResult = await runCommand("git", ["remote", "get-url", "origin"], repoRoot);
-  const remoteUrl = remoteResult.stdout.trim();
-  const pushUrl = buildAuthRemoteUrl(remoteUrl, githubToken);
-
-  const forceFlag = force ? ["--force"] : [];
-  if (pushUrl) {
-    await runCommand("git", ["push", ...forceFlag, pushUrl, `HEAD:${branchName}`], repoRoot);
-    logger(`Pushed updates to ${branchName}.`);
-    return;
-  }
-
-  logger("Falling back to pushing via origin remote without token.");
-  await runCommand("git", ["push", ...forceFlag, "origin", branchName], repoRoot);
-}
-
-function buildAuthRemoteUrl(remoteUrl: string, githubToken: string): string | null {
-  if (remoteUrl.startsWith("https://")) {
-    return remoteUrl.replace("https://", `https://x-access-token:${githubToken}@`);
-  }
-
-  const sshMatch = remoteUrl.match(/^git@github.com:(.+?)(\.git)?$/);
-  if (sshMatch) {
-    const repoPath = sshMatch[1];
-    return `https://x-access-token:${githubToken}@github.com/${repoPath}.git`;
-  }
-
-  return null;
 }
 
 function resolveGitPath(filePath: string, repoRoot?: string): string {

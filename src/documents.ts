@@ -7,11 +7,10 @@ import * as path from "path";
 import { markdownToNotionBlocks, extractTitle } from "./markdown-to-notion.js";
 import { uploadImageBlocks } from "./image-uploads.js";
 import { normalizeNotionId, notionPageUrl } from "./notion-api.js";
-import { normalizeMappingKey } from "./mapping-file.js";
-import { isInsidePath, isSamePath, resolveChildPath, resolveFromDirectory } from "./path-utils.js";
+import { isInsidePath, resolveChildPath, resolveFromDirectory } from "./path-utils.js";
 import type { LogContext } from "./logging.js";
 import type { NotionBlock } from "./notion-types.js";
-import type { MappingEntry, MarkdownDocument } from "./sync-types.js";
+import type { MarkdownDocument, SyncStateEntry } from "./sync-types.js";
 
 type FrontMatterResult<T> = { attributes: T; body: string };
 type FrontMatterParser = <T>(
@@ -28,7 +27,7 @@ export async function ensureDirectoryExists(dirPath: string): Promise<void> {
 
 export async function collectMarkdownFiles(
   dirPath: string,
-  mappingFilePath: string,
+  privateMarkdownPrefix: string | null,
 ): Promise<string[]> {
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
   const files: string[] = [];
@@ -38,11 +37,11 @@ export async function collectMarkdownFiles(
       if (entry.name === "node_modules" || entry.name.startsWith(".")) {
         continue;
       }
-      files.push(...(await collectMarkdownFiles(fullPath, mappingFilePath)));
+      files.push(...(await collectMarkdownFiles(fullPath, privateMarkdownPrefix)));
       continue;
     }
     if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
-      if (isSamePath(fullPath, mappingFilePath)) {
+      if (isPrivateMarkdownFile(entry.name, privateMarkdownPrefix)) {
         continue;
       }
       files.push(fullPath);
@@ -51,10 +50,21 @@ export async function collectMarkdownFiles(
   return files;
 }
 
+export function normalizeDocumentPath(relPath: string): string {
+  return relPath.replace(/\\/g, "/");
+}
+
+function isPrivateMarkdownFile(fileName: string, privateMarkdownPrefix: string | null): boolean {
+  if (!privateMarkdownPrefix) {
+    return false;
+  }
+  return fileName.startsWith(privateMarkdownPrefix);
+}
+
 export async function loadMarkdownDocuments(
   markdownFiles: string[],
   docsRoot: string,
-  mapping: Map<string, MappingEntry>,
+  syncStateEntries: Map<string, SyncStateEntry>,
 ): Promise<MarkdownDocument[]> {
   const documents: MarkdownDocument[] = [];
   for (const filePath of markdownFiles) {
@@ -65,11 +75,11 @@ export async function loadMarkdownDocuments(
     const frontMatterAttributes = parsedFrontMatter.attributes || {};
     const markdownBody = parsedFrontMatter.body || "";
 
-    const relPath = normalizeMappingKey(path.relative(docsRoot, filePath));
+    const relPath = normalizeDocumentPath(path.relative(docsRoot, filePath));
     let notionPageId: string | undefined;
-    const mappedEntry = mapping.get(relPath);
-    if (mappedEntry?.pageId) {
-      notionPageId = normalizeNotionId(mappedEntry.pageId);
+    const syncStateEntry = syncStateEntries.get(relPath);
+    if (syncStateEntry?.pageId) {
+      notionPageId = normalizeNotionId(syncStateEntry.pageId);
     } else if (
       typeof frontMatterAttributes.notion_page_id === "string" &&
       frontMatterAttributes.notion_page_id.trim().length > 0
