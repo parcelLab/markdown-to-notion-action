@@ -66,41 +66,7 @@ async function clearChildren(
 
   const concurrencyLimit = 3;
   logContext.info(`Deleting ${children.length} existing blocks...`);
-
-  const chunks = chunkArray(children, concurrencyLimit);
-  for (const [chunkIndex, chunk] of chunks.entries()) {
-    await Promise.all(
-      chunk.map(async (child) => {
-        const blockIdValue = "id" in child ? child.id : null;
-        if (typeof blockIdValue !== "string" || !blockIdValue) {
-          logContext.warn("Skipping delete for block with missing id.");
-          return;
-        }
-
-        try {
-          /**
-           * Notion API: Delete a block
-           * https://developers.notion.com/reference/delete-a-block.md
-           */
-          await notionRequest(
-            () => notion.blocks.delete({ block_id: blockIdValue }),
-            `blocks.delete ${blockIdValue}`,
-          );
-        } catch (error) {
-          if (isNotionNotFoundError(error)) {
-            return;
-          }
-          const message = error instanceof Error ? error.message : String(error);
-          logContext.warn(`Failed to delete block ${blockIdValue}: ${message}`);
-        }
-      }),
-    );
-
-    if (chunkIndex % 20 === 0 && chunkIndex > 0) {
-      const deletedCount = Math.min((chunkIndex + 1) * concurrencyLimit, children.length);
-      logContext.info(`Deleted ${deletedCount}/${children.length} blocks...`);
-    }
-  }
+  await deleteBlocks(notion, children, logContext, concurrencyLimit);
 
   logContext.info("Finished clearing page.");
 }
@@ -233,7 +199,7 @@ export async function appendBlocksSafe(
         } catch (blockError) {
           const blockMessage =
             blockError instanceof Error ? blockError.message : String(blockError);
-          logContext.warn(`Failed to append block (${block.type}): ${blockMessage}`);
+          throw new Error(`Failed to append block (${block.type}): ${blockMessage}`);
         }
       }
     }
@@ -276,6 +242,7 @@ export async function appendPageLinksAfterAnchor(
   }
 
   const blocks: NotionBlock[] = [];
+  const desiredPageIds: string[] = [];
   const seenPageIds = new Set<string>();
   for (const page of pages) {
     const normalizedId = normalizeNotionId(page.pageId);
@@ -284,6 +251,7 @@ export async function appendPageLinksAfterAnchor(
     }
 
     seenPageIds.add(normalizedId);
+    desiredPageIds.push(normalizedId);
     blocks.push({
       type: "link_to_page",
       link_to_page: {
@@ -291,6 +259,12 @@ export async function appendPageLinksAfterAnchor(
         page_id: toDashedId(normalizedId),
       },
     });
+  }
+
+  const existingPageIds = existingLinkBlocks.map(getLinkToPageId);
+  if (arePageIdListsEqual(existingPageIds, desiredPageIds)) {
+    logContext.info("Index links unchanged.");
+    return;
   }
 
   if (existingLinkBlocks.length > 0) {
@@ -595,13 +569,13 @@ async function deleteBlocks(
   notion: Client,
   blocks: PartialBlockObjectResponse[],
   logContext: LogContext,
+  concurrencyLimit = 3,
 ): Promise<number> {
   if (!blocks.length) {
     return 0;
   }
 
   logContext.info(`Starting batch delete for ${blocks.length} blocks...`);
-  const concurrencyLimit = 3;
   const chunks = chunkArray(blocks, concurrencyLimit);
   let deletedCount = 0;
 
@@ -610,8 +584,7 @@ async function deleteBlocks(
       chunk.map(async (block) => {
         const blockId = getBlockId(block);
         if (!blockId) {
-          logContext.warn("Skipping delete for block with missing id.");
-          return;
+          throw new Error("Cannot delete block with missing id.");
         }
         await deleteBlockSafe(notion, blockId, logContext);
       }),
@@ -645,6 +618,7 @@ async function deleteBlockSafe(
     }
     const message = error instanceof Error ? error.message : String(error);
     logContext.warn(`Failed to delete block ${blockId}: ${message}`);
+    throw error instanceof Error ? error : new Error(message);
   }
 }
 
@@ -708,11 +682,33 @@ async function appendBlocksAfter(
         } catch (innerError) {
           const innerMessage =
             innerError instanceof Error ? innerError.message : String(innerError);
-          logContext.warn(`Block append failed: ${innerMessage}`);
+          throw new Error(`Block append failed: ${innerMessage}`);
         }
       }
     }
   }
+}
+
+function getLinkToPageId(block: PartialBlockObjectResponse): string | null {
+  if (getBlockType(block) !== "link_to_page") {
+    return null;
+  }
+  if (!("link_to_page" in block) || typeof block.link_to_page !== "object") {
+    return null;
+  }
+
+  const linkToPage = block.link_to_page as { page_id?: unknown; type?: unknown };
+  if (linkToPage.type !== "page_id" || typeof linkToPage.page_id !== "string") {
+    return null;
+  }
+  return normalizeNotionId(linkToPage.page_id);
+}
+
+function arePageIdListsEqual(left: (string | null)[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((pageId, index) => pageId === right[index]);
 }
 
 function areBlocksEquivalent(existing: PartialBlockObjectResponse, incoming: NotionBlock): boolean {

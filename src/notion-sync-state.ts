@@ -27,6 +27,7 @@ type SyncStateRecord = {
 };
 
 export type SyncStateHandle = {
+  childPageIds: Set<string>;
   entries: Map<string, SyncStateEntry>;
   pageId: string;
 };
@@ -36,21 +37,24 @@ export async function loadSyncState(
   parentPageId: string,
   logContext: LogContext = createLogContext("sync-state"),
 ): Promise<SyncStateHandle> {
-  const existingPageId = await findSyncStatePageId(notion, parentPageId, logContext);
+  const parentChildren = await listAllChildren(notion, parentPageId);
+  const childPageIds = collectChildPageIds(parentChildren);
+  const existingPageId = findSyncStatePageId(parentChildren, logContext);
   if (existingPageId) {
     const entries = await readSyncStateEntries(notion, existingPageId, logContext);
     logContext.info(`Loaded ${entries.size} sync state records from Notion.`);
-    return { entries, pageId: existingPageId };
+    return { childPageIds, entries, pageId: existingPageId };
   }
 
   const created = await createPage(notion, parentPageId, SYNC_STATE_PAGE_TITLE);
   const pageId = normalizeNotionId(created.id);
+  childPageIds.add(pageId);
   logContext.info(`Created sync state page: ${SYNC_STATE_PAGE_TITLE}`);
   if (created.url) {
     logContext.info(`Sync state page URL: ${created.url}`);
   }
   await writeSyncState(notion, pageId, new Map(), logContext);
-  return { entries: new Map(), pageId };
+  return { childPageIds, entries: new Map(), pageId };
 }
 
 export async function appendSyncStateRecord(
@@ -83,12 +87,10 @@ export async function writeSyncState(
   await syncPageBlocks(notion, syncStatePageId, blocks, logContext);
 }
 
-async function findSyncStatePageId(
-  notion: Client,
-  parentPageId: string,
+function findSyncStatePageId(
+  children: PartialBlockObjectResponse[],
   logContext: LogContext,
-): Promise<string | null> {
-  const children = await listAllChildren(notion, parentPageId);
+): string | null {
   const matches = children.filter(isSyncStateChildPage);
   if (matches.length > 1) {
     logContext.warn(
@@ -101,6 +103,27 @@ async function findSyncStatePageId(
     return null;
   }
   return normalizeNotionId(match.id);
+}
+
+function collectChildPageIds(children: PartialBlockObjectResponse[]): Set<string> {
+  const ids = new Set<string>();
+  for (const child of children) {
+    const pageId = getChildPageId(child);
+    if (pageId) {
+      ids.add(pageId);
+    }
+  }
+  return ids;
+}
+
+function getChildPageId(block: PartialBlockObjectResponse): string | null {
+  if (!("type" in block) || block.type !== "child_page") {
+    return null;
+  }
+  if (!("id" in block) || typeof block.id !== "string") {
+    return null;
+  }
+  return normalizeNotionId(block.id);
 }
 
 function isSyncStateChildPage(

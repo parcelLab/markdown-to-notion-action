@@ -114,6 +114,15 @@ async function run(): Promise<void> {
         const existingSyncStateEntry = syncState.entries.get(documentPath);
         const requiresForcedSync =
           !existingSyncStateEntry?.sourceHash || existingSyncStateEntry.title !== pageTitle;
+        if (
+          pageId &&
+          existingSyncStateEntry?.pageId &&
+          !syncState.childPageIds.has(normalizeNotionId(pageId))
+        ) {
+          documentLog.warn(`Notion page no longer exists under the target parent, recreating.`);
+          pageId = undefined;
+          pageUrl = undefined;
+        }
 
         if (pageId) {
           if (
@@ -167,6 +176,7 @@ async function run(): Promise<void> {
         if (!pageId) {
           const created = await createPage(notion, pagesParentId, pageTitle);
           pageId = normalizeNotionId(created.id);
+          syncState.childPageIds.add(pageId);
           pageUrl = created.url || notionPageUrl(pageId);
           documentLog.info(`Created page: ${pageTitle}`);
           if (pageUrl) {
