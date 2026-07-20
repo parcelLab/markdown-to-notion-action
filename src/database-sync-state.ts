@@ -247,18 +247,23 @@ async function ensureTableViewColumnVisibility(
       continue;
     }
 
-    await notionRequest(
-      () =>
-        notion.views.update({
-          view_id: toDashedId(viewId),
-          configuration: {
-            type: "table",
-            properties: propertiesConfiguration,
-          },
-        }),
-      `views.update ${viewId}`,
-    );
-    updatedViews += 1;
+    try {
+      await notionRequest(
+        () =>
+          notion.views.update({
+            view_id: toDashedId(viewId),
+            configuration: {
+              type: "table",
+              properties: propertiesConfiguration,
+            },
+          }),
+        `views.update ${viewId}`,
+      );
+      updatedViews += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logContext.warn(`Unable to hide internal sync columns for Notion view ${viewId}: ${message}`);
+    }
   }
 
   if (updatedViews > 0) {
@@ -327,12 +332,6 @@ function buildHiddenColumnConfiguration(
   const nextProperties = existingProperties.map((property) =>
     hiddenPropertyIds.has(property.property_id) ? { ...property, visible: false } : property,
   );
-  const configuredPropertyIds = new Set(nextProperties.map((property) => property.property_id));
-  for (const propertyId of hiddenPropertyIds) {
-    if (!configuredPropertyIds.has(propertyId)) {
-      nextProperties.push({ property_id: propertyId, visible: false });
-    }
-  }
 
   return areViewPropertiesEqual(existingProperties, nextProperties) ? null : nextProperties;
 }
