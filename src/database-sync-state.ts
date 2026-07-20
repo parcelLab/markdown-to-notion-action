@@ -1,12 +1,6 @@
 import type { Client } from "@notionhq/client";
 
-import {
-  isNotionArchivedError,
-  isNotionNotFoundError,
-  normalizeNotionId,
-  notionRequest,
-  toDashedId,
-} from "./notion-api.js";
+import { normalizeNotionId, notionRequest, toDashedId } from "./notion-api.js";
 import type { LogContext } from "./logging.js";
 import type { SyncStateEntry } from "./sync-types.js";
 
@@ -145,33 +139,20 @@ export function buildDatabasePageProperties(
 
 async function resolveDataSourceId(
   notion: Client,
-  dataSourceOrDatabaseId: string,
+  databaseIdInput: string,
   logContext: LogContext,
 ): Promise<string> {
-  const normalizedId = normalizeNotionId(dataSourceOrDatabaseId);
-  try {
-    await notionRequest(
-      () => notion.dataSources.retrieve({ data_source_id: toDashedId(normalizedId) }),
-      `dataSources.retrieve ${normalizedId}`,
-    );
-    logContext.info(`Using Notion data source: ${normalizedId}`);
-    return normalizedId;
-  } catch (error) {
-    if (!isNotionNotFoundError(error) && !isNotionArchivedError(error)) {
-      throw error;
-    }
-  }
-
+  const databaseId = normalizeNotionId(databaseIdInput);
   const database = await notionRequest(
-    () => notion.databases.retrieve({ database_id: toDashedId(normalizedId) }),
-    `databases.retrieve ${normalizedId}`,
+    () => notion.databases.retrieve({ database_id: toDashedId(databaseId) }),
+    `databases.retrieve ${databaseId}`,
   );
   if (!("data_sources" in database) || !database.data_sources.length) {
-    throw new Error(`Notion database ${normalizedId} does not expose any data sources.`);
+    throw new Error(`Notion database ${databaseId} does not expose any data sources.`);
   }
 
   const dataSourceId = normalizeNotionId(database.data_sources[0].id);
-  logContext.info(`Resolved Notion database ${normalizedId} to data source ${dataSourceId}.`);
+  logContext.info(`Resolved Notion database ${databaseId} to data source ${dataSourceId}.`);
   return dataSourceId;
 }
 
