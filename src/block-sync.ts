@@ -167,10 +167,6 @@ export async function appendBlocksSafe(
   for (const chunk of chunks) {
     const requestChunk = toNotionBlockRequests(chunk);
     try {
-      /**
-       * Notion API: Append block children
-       * https://developers.notion.com/reference/patch-block-children.md
-       */
       await notionRequest(
         () =>
           notion.blocks.children.append({
@@ -184,10 +180,6 @@ export async function appendBlocksSafe(
       logContext.warn(`Chunk append failed: ${message}. Retrying block-by-block.`);
       for (const block of chunk) {
         try {
-          /**
-           * Notion API: Append block children
-           * https://developers.notion.com/reference/patch-block-children.md
-           */
           await notionRequest(
             () =>
               notion.blocks.children.append({
@@ -228,7 +220,7 @@ export async function appendPageLinksAfterAnchor(
       return false;
     }
   });
-  if (anchorIndex < 0) {
+  if (anchorIndex === -1) {
     throw new Error(`Index anchor block ${anchorBlockId} not found in parent page.`);
   }
 
@@ -391,10 +383,6 @@ async function updateBlockContent(
   }
 
   try {
-    /**
-     * Notion API: Update a block
-     * https://developers.notion.com/reference/update-a-block.md
-     */
     await notionRequest(() => notion.blocks.update(request), `blocks.update ${blockId}`);
     return true;
   } catch (error) {
@@ -545,10 +533,6 @@ async function appendSingleBlockAfter(
   logContext: LogContext,
 ): Promise<string> {
   logContext.info(`Starting single block creation after ${anchorBlockId}.`);
-  /**
-   * Notion API: Append block children
-   * https://developers.notion.com/reference/patch-block-children.md
-   */
   const response = await notionRequest(
     () =>
       notion.blocks.children.append({
@@ -558,7 +542,7 @@ async function appendSingleBlockAfter(
       }),
     `blocks.children.append ${parentPageId}`,
   );
-  const last = response.results[response.results.length - 1];
+  const last = response.results.at(-1);
   if (last && typeof last === "object" && "id" in last) {
     return (last as { id: string }).id;
   }
@@ -604,10 +588,6 @@ async function deleteBlockSafe(
   logContext: LogContext,
 ): Promise<void> {
   try {
-    /**
-     * Notion API: Delete a block
-     * https://developers.notion.com/reference/delete-a-block.md
-     */
     await notionRequest(
       () => notion.blocks.delete({ block_id: blockId }),
       `blocks.delete ${blockId}`,
@@ -640,10 +620,6 @@ async function appendBlocksAfter(
   for (const chunk of chunks) {
     const requestChunk = toNotionBlockRequests(chunk);
     try {
-      /**
-       * Notion API: Append block children
-       * https://developers.notion.com/reference/patch-block-children.md
-       */
       const response = await notionRequest(
         () =>
           notion.blocks.children.append({
@@ -653,7 +629,7 @@ async function appendBlocksAfter(
           }),
         `blocks.children.append ${parentPageId}`,
       );
-      const last = response.results[response.results.length - 1];
+      const last = response.results.at(-1);
       if (last && typeof last === "object" && "id" in last) {
         afterBlockId = (last as { id: string }).id;
       }
@@ -662,10 +638,6 @@ async function appendBlocksAfter(
       logContext.warn(`Chunk append failed: ${message}. Retrying block-by-block.`);
       for (const block of chunk) {
         try {
-          /**
-           * Notion API: Append block children
-           * https://developers.notion.com/reference/patch-block-children.md
-           */
           const response = await notionRequest(
             () =>
               notion.blocks.children.append({
@@ -675,7 +647,7 @@ async function appendBlocksAfter(
               }),
             `blocks.children.append ${parentPageId}`,
           );
-          const last = response.results[response.results.length - 1];
+          const last = response.results.at(-1);
           if (last && typeof last === "object" && "id" in last) {
             afterBlockId = (last as { id: string }).id;
           }

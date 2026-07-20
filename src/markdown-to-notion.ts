@@ -459,8 +459,8 @@ function isTableOfContentsLabel(text: string): boolean {
     .toLowerCase()
     .replace(/^\[/, "")
     .replace(/\]$/, "")
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
+    .replaceAll(/[_-]+/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim();
   return TABLE_OF_CONTENTS_LABELS.has(normalized);
 }

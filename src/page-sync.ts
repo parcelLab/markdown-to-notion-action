@@ -20,16 +20,13 @@ type SyncDecision = {
 
 type CreatePageRequest = Parameters<Client["pages"]["create"]>[0];
 type PageProperties = CreatePageRequest["properties"];
+type UpdatePageRequest = Parameters<Client["pages"]["update"]>[0];
 
 const NOTION_SYNC_BUFFER_MS = 60_000;
 
 export async function resolveParentPageId(notion: Client, blockId: string): Promise<string> {
   let currentBlockId = toDashedId(blockId);
   for (let depth = 0; depth < 10; depth += 1) {
-    /**
-     * Notion API: Retrieve a block
-     * https://developers.notion.com/reference/retrieve-a-block.md
-     */
     const block = await notionRequest(
       () => notion.blocks.retrieve({ block_id: currentBlockId }),
       `blocks.retrieve ${currentBlockId}`,
@@ -58,10 +55,6 @@ export async function createPage(
   parentPageId: string,
   title: string,
 ): Promise<{ id: string; url?: string | null }> {
-  /**
-   * Notion API: Create a page
-   * https://developers.notion.com/reference/post-page.md
-   */
   const response = await notionRequest(
     () =>
       notion.pages.create({
@@ -77,16 +70,32 @@ export async function createPage(
   };
 }
 
+export async function createDataSourcePage(
+  notion: Client,
+  dataSourceId: string,
+  properties: PageProperties,
+): Promise<{ id: string; url?: string | null }> {
+  const response = await notionRequest(
+    () =>
+      notion.pages.create({
+        parent: { data_source_id: toDashedId(dataSourceId) },
+        properties,
+      }),
+    `pages.create data_source ${dataSourceId}`,
+  );
+
+  return {
+    id: response.id,
+    url: "url" in response ? response.url : null,
+  };
+}
+
 export async function archivePageIfPresent(
   notion: Client,
   pageId: string,
   logContext: LogContext = defaultLogContext,
 ): Promise<"already-gone" | "archived"> {
   try {
-    /**
-     * Notion API: Move a page to trash
-     * https://developers.notion.com/reference/patch-page.md
-     */
     await notionRequest(
       () =>
         notion.pages.update({
@@ -114,10 +123,6 @@ export async function updatePageContent(
   logContext: LogContext = defaultLogContext,
 ): Promise<void> {
   logContext.info(`Updating page metadata for ${pageId}...`);
-  /**
-   * Notion API: Update page properties
-   * https://developers.notion.com/reference/patch-page.md
-   */
   await notionRequest(
     () =>
       notion.pages.update({
@@ -129,6 +134,42 @@ export async function updatePageContent(
 
   logContext.info(`Starting block sync for ${pageId}...`);
   await syncPageBlocks(notion, pageId, blocks, logContext);
+}
+
+export async function updateDataSourcePageContent(
+  notion: Client,
+  pageId: string,
+  properties: UpdatePageRequest["properties"],
+  blocks: NotionBlock[],
+  logContext: LogContext = defaultLogContext,
+): Promise<void> {
+  logContext.info(`Updating database page metadata for ${pageId}...`);
+  await notionRequest(
+    () =>
+      notion.pages.update({
+        page_id: toDashedId(pageId),
+        properties,
+      }),
+    `pages.update ${pageId}`,
+  );
+
+  logContext.info(`Starting block sync for ${pageId}...`);
+  await syncPageBlocks(notion, pageId, blocks, logContext);
+}
+
+export async function updateDataSourcePageProperties(
+  notion: Client,
+  pageId: string,
+  properties: UpdatePageRequest["properties"],
+): Promise<void> {
+  await notionRequest(
+    () =>
+      notion.pages.update({
+        page_id: toDashedId(pageId),
+        properties,
+      }),
+    `pages.update ${pageId}`,
+  );
 }
 
 export async function getSyncDecision(
@@ -144,10 +185,6 @@ export async function getSyncDecision(
     logContext.warn(`Unable to read git commit time for ${filePath}. Syncing.`);
   }
 
-  /**
-   * Notion API: Retrieve a page
-   * https://developers.notion.com/reference/retrieve-a-page.md
-   */
   let page: Awaited<ReturnType<Client["pages"]["retrieve"]>>;
   try {
     page = await notionRequest(

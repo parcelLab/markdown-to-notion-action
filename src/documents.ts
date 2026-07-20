@@ -51,7 +51,7 @@ export async function collectMarkdownFiles(
 }
 
 export function normalizeDocumentPath(relPath: string): string {
-  return relPath.replace(/\\/g, "/");
+  return relPath.replaceAll("\\", "/");
 }
 
 function isPrivateMarkdownFile(fileName: string, privateMarkdownPrefix: string | null): boolean {
@@ -140,11 +140,11 @@ export function buildNotionPageTitle(documentEntry: MarkdownDocument, separator:
 
   const normalizedSeparator = separator.trim();
   const separatorText = normalizedSeparator ? ` ${normalizedSeparator} ` : " ";
-  return `${folderPath.replace(/\//g, separatorText)}${separatorText}${baseTitle}`;
+  return `${folderPath.replaceAll("/", separatorText)}${separatorText}${baseTitle}`;
 }
 
 function normalizeFolderPath(relPath: string): string {
-  const normalized = relPath.replace(/\\/g, "/");
+  const normalized = relPath.replaceAll("\\", "/");
   const dir = path.posix.dirname(normalized);
   if (dir === "." || dir === "/") {
     return "";

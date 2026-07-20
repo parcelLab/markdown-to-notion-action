@@ -1,6 +1,7 @@
 import tsParser from "@typescript-eslint/parser";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import prettier from "eslint-plugin-prettier";
+import unicorn from "eslint-plugin-unicorn";
 import eslintConfigPrettier from "eslint-config-prettier";
 
 export default [
@@ -19,6 +20,7 @@ export default [
     plugins: {
       "@typescript-eslint": tsPlugin,
       prettier,
+      unicorn,
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
@@ -35,6 +37,51 @@ export default [
           destructuredArrayIgnorePattern: "^_",
         },
       ],
+      "unicorn/catch-error-name": "error",
+      "unicorn/consistent-empty-array-spread": "error",
+      "unicorn/consistent-existence-index-check": "error",
+      "unicorn/consistent-optional-chaining": "error",
+      "unicorn/custom-error-definition": "error",
+      "unicorn/error-message": "error",
+      "unicorn/escape-case": "error",
+      "unicorn/new-for-builtins": "error",
+      "unicorn/no-abusive-eslint-disable": "error",
+      "unicorn/no-array-fill-with-reference-type": "error",
+      "unicorn/no-await-in-promise-methods": "error",
+      "unicorn/no-invalid-fetch-options": "error",
+      "unicorn/no-invalid-remove-event-listener": "error",
+      "unicorn/no-multiple-promise-resolver-calls": "error",
+      "unicorn/no-new-array": "error",
+      "unicorn/no-new-buffer": "error",
+      "unicorn/no-unreadable-array-destructuring": "error",
+      "unicorn/no-useless-error-capture-stack-trace": "error",
+      "unicorn/prefer-add-event-listener": "error",
+      "unicorn/prefer-array-find": "error",
+      "unicorn/prefer-array-flat": "error",
+      "unicorn/prefer-array-flat-map": "error",
+      "unicorn/prefer-array-index-of": "error",
+      "unicorn/prefer-at": "error",
+      "unicorn/prefer-date-now": "error",
+      "unicorn/prefer-default-parameters": "error",
+      "unicorn/prefer-dom-node-append": "error",
+      "unicorn/prefer-includes": "error",
+      "unicorn/prefer-keyboard-event-key": "error",
+      "unicorn/prefer-logical-operator-over-ternary": "error",
+      "unicorn/prefer-modern-dom-apis": "error",
+      "unicorn/prefer-native-coercion-functions": "error",
+      "unicorn/prefer-negative-index": "error",
+      "unicorn/prefer-number-properties": "error",
+      "unicorn/prefer-object-from-entries": "error",
+      "unicorn/prefer-optional-catch-binding": "error",
+      "unicorn/prefer-regexp-test": "error",
+      "unicorn/prefer-set-has": "error",
+      "unicorn/prefer-set-size": "error",
+      "unicorn/prefer-string-replace-all": "error",
+      "unicorn/prefer-string-slice": "error",
+      "unicorn/prefer-string-starts-ends-with": "error",
+      "unicorn/prefer-string-trim-start-end": "error",
+      "unicorn/prefer-type-error": "error",
+      "unicorn/throw-new-error": "error",
     },
   },
 ];

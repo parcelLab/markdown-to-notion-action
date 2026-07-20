@@ -47,6 +47,11 @@ export function isNotionArchivedError(error: unknown): boolean {
 }
 
 export function normalizeNotionId(input: string): string {
+  const prioritized = extractPrioritizedNotionId(input);
+  if (prioritized) {
+    return prioritized;
+  }
+
   const matches = input.match(
     /[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g,
   );
@@ -54,12 +59,41 @@ export function normalizeNotionId(input: string): string {
     throw new Error(`Invalid Notion id: ${input}`);
   }
 
-  const raw = matches[matches.length - 1];
-  const cleaned = raw.replace(/-/g, "").toLowerCase();
+  const raw = matches.at(-1);
+  if (!raw) {
+    throw new Error(`Invalid Notion id: ${input}`);
+  }
+  const cleaned = raw.replaceAll("-", "").toLowerCase();
   if (cleaned.length !== 32) {
     throw new Error(`Invalid Notion id: ${input}`);
   }
   return cleaned;
+}
+
+function extractPrioritizedNotionId(input: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    return null;
+  }
+
+  const fragmentMatch = parsed.hash.match(/[0-9a-fA-F]{32}/);
+  if (fragmentMatch?.[0]) {
+    return fragmentMatch[0].toLowerCase();
+  }
+
+  const pathSegments = parsed.pathname.split("/").filter(Boolean);
+  for (const segment of [...pathSegments].reverse()) {
+    const pathMatch = segment.match(/[0-9a-fA-F]{32}/);
+    if (pathMatch?.[0]) {
+      return pathMatch[0].toLowerCase();
+    }
+  }
+
+  const queryPageId = parsed.searchParams.get("p") ?? parsed.searchParams.get("page_id");
+  const queryMatch = queryPageId?.match(/[0-9a-fA-F]{32}/);
+  return queryMatch?.[0]?.toLowerCase() ?? null;
 }
 
 export function toDashedId(id: string): string {
@@ -91,10 +125,6 @@ export async function listAllChildren(
   let cursor: string | undefined;
 
   do {
-    /**
-     * Notion API: Retrieve block children
-     * https://developers.notion.com/reference/get-block-children.md
-     */
     const response = await notionRequest(
       () =>
         notion.blocks.children.list({

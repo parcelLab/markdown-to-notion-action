@@ -1,5 +1,5 @@
 name: "Markdown to Notion"
-description: "Syncs Markdown files to Notion pages and updates an index block."
+description: "Syncs Markdown files to Notion database pages."
 icon: "book"
 color: "purple"
 
@@ -23,6 +23,10 @@ inputs:
 
   page_id:
     description: "Notion page ID where files will be created when page_block_id is not provided"
+    required: false
+
+  database_id:
+    description: "Notion database ID/URL where files will be created as database pages"
     required: false
 
   private_markdown_prefix:
@@ -71,6 +75,7 @@ runs:
         INPUT_DOCS_FOLDER: ${{ inputs.docs_folder }}
         INPUT_PAGE_BLOCK_ID: ${{ inputs.page_block_id }}
         INPUT_PAGE_ID: ${{ inputs.page_id }}
+        INPUT_DATABASE_ID: ${{ inputs.database_id }}
         INPUT_PRIVATE_MARKDOWN_PREFIX: ${{ inputs.private_markdown_prefix }}
         INPUT_TITLE_PREFIX_SEPARATOR: ${{ inputs.title_prefix_separator }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github_token }}

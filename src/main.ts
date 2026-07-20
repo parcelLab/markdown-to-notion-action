@@ -1,12 +1,12 @@
 import * as core from "@actions/core";
 import { Client } from "@notionhq/client";
 
-import {
-  normalizePrivateMarkdownPrefix,
-  normalizeTitlePrefixSeparator,
-  readInput,
-} from "./action-inputs.js";
 import { appendBlocksSafe, appendPageLinksAfterAnchor } from "./block-sync.js";
+import {
+  buildDatabasePageProperties,
+  buildSourceUrl,
+  loadDatabaseSyncState,
+} from "./database-sync-state.js";
 import {
   buildBlocksForDocument,
   buildNotionPageTitle,
@@ -25,13 +25,31 @@ import {
 } from "./notion-api.js";
 import {
   archivePageIfPresent,
+  createDataSourcePage,
   createPage,
   getSyncDecision,
   resolveParentPageId,
+  updateDataSourcePageContent,
+  updateDataSourcePageProperties,
   updatePageContent,
 } from "./page-sync.js";
 import { resolveInsideRoot } from "./path-utils.js";
-import type { SyncStateEntry, SyncedPage } from "./sync-types.js";
+import {
+  normalizePrivateMarkdownPrefix,
+  normalizeTitlePrefixSeparator,
+  readInput,
+} from "./action-inputs.js";
+import type { DatabaseSyncState } from "./database-sync-state.js";
+import type { MarkdownDocument, SyncStateEntry, SyncedPage } from "./sync-types.js";
+
+type RuntimeContext = {
+  docsFolderPath: string;
+  githubToken: string | null;
+  notion: Client;
+  privateMarkdownPrefix: string | null;
+  titlePrefixSeparator: string;
+  workspaceRoot: string;
+};
 
 async function run(): Promise<void> {
   try {
@@ -44,6 +62,7 @@ async function run(): Promise<void> {
     const docsFolder = readInput("docs_folder", ["DOCS_FOLDER"]);
     const pageBlockInput = readInput("page_block_id", ["PAGE_BLOCK_ID"]);
     const pageInput = readInput("page_id", ["PAGE_ID"]);
+    const databaseInput = readInput("database_id", ["DATABASE_ID"]);
     const privateMarkdownPrefixInput = readInput("private_markdown_prefix", [
       "PRIVATE_MARKDOWN_PREFIX",
     ]);
@@ -66,207 +85,520 @@ async function run(): Promise<void> {
     const docsFolderPath = resolveInsideRoot(workspaceRoot, docsFolder, "docs_folder");
     await ensureDirectoryExists(docsFolderPath);
 
-    const pageBlockId = pageBlockInput ? normalizeNotionId(pageBlockInput) : null;
-    const pageBlockParentId = pageBlockId ? await resolveParentPageId(notion, pageBlockId) : null;
-    const pagesParentId = pageInput ? normalizeNotionId(pageInput) : pageBlockParentId;
-    if (!pagesParentId) {
-      throw new Error("Either page_block_id or page_id must be provided.");
-    }
-
-    const titlePrefixSeparator = normalizeTitlePrefixSeparator(titlePrefixSeparatorInput);
     const privateMarkdownPrefix = normalizePrivateMarkdownPrefix(privateMarkdownPrefixInput);
-    const syncState = await loadSyncState(notion, pagesParentId);
-
     if (privateMarkdownPrefix) {
       core.info(`Skipping markdown files whose file name starts with '${privateMarkdownPrefix}'.`);
     } else {
       core.info("Private markdown file prefix disabled; all markdown files can be synced.");
     }
 
-    const markdownFiles = await collectMarkdownFiles(docsFolderPath, privateMarkdownPrefix);
-    if (!markdownFiles.length) {
-      core.warning(`No markdown files found in ${docsFolderPath}.`);
-    }
-
-    const documents = await loadMarkdownDocuments(markdownFiles, docsFolderPath, syncState.entries);
-
-    const knownPageUrls = new Map<string, string>();
-    for (const documentEntry of documents) {
-      if (documentEntry.notionPageId) {
-        knownPageUrls.set(documentEntry.absPath, notionPageUrl(documentEntry.notionPageId));
-      }
-    }
-
-    const syncedPages: SyncedPage[] = [];
-    let syncStateDirty = false;
-    const currentDocumentPaths = new Set<string>(
-      documents.map((documentEntry) => normalizeDocumentPath(documentEntry.relPath)),
-    );
-
-    for (const documentEntry of documents) {
-      try {
-        const documentLog = createLogContext(documentEntry.relPath);
-        documentLog.info(`Sync start: ${documentEntry.title}`);
-        const documentPath = normalizeDocumentPath(documentEntry.relPath);
-        const pageTitle = buildNotionPageTitle(documentEntry, titlePrefixSeparator);
-        let pageId = documentEntry.notionPageId;
-        let pageUrl = documentEntry.notionUrl;
-        const existingSyncStateEntry = syncState.entries.get(documentPath);
-        const requiresForcedSync =
-          !existingSyncStateEntry?.sourceHash || existingSyncStateEntry.title !== pageTitle;
-        if (
-          pageId &&
-          existingSyncStateEntry?.pageId &&
-          !syncState.childPageIds.has(normalizeNotionId(pageId))
-        ) {
-          documentLog.warn(`Notion page no longer exists under the target parent, recreating.`);
-          pageId = undefined;
-          pageUrl = undefined;
-        }
-
-        if (!pageId) {
-          const matchedPageId = syncState.childPageIdsByTitle.get(pageTitle);
-          if (matchedPageId) {
-            pageId = matchedPageId;
-            pageUrl = notionPageUrl(matchedPageId);
-            documentLog.info(`Matched existing Notion child page by generated title: ${pageTitle}`);
-          }
-        }
-
-        if (pageId) {
-          if (
-            existingSyncStateEntry?.sourceHash === documentEntry.sourceHash &&
-            existingSyncStateEntry.title === pageTitle
-          ) {
-            documentLog.info("Skipping sync: source hash unchanged.");
-            pageUrl = pageUrl ?? notionPageUrl(pageId);
-          } else {
-            const decision = await getSyncDecision(
-              notion,
-              pageId,
-              documentEntry.absPath,
-              githubToken,
-              workspaceRoot,
-              documentLog,
-            );
-
-            if (decision.archivedOrMissing) {
-              documentLog.warn(`Notion page missing or archived, recreating: ${pageTitle}`);
-              pageId = undefined;
-            } else if (decision.skipSync && !requiresForcedSync) {
-              documentLog.info("Skipping sync: Notion is up to date.");
-              pageUrl = pageUrl ?? notionPageUrl(pageId);
-            } else {
-              const blocks = await buildBlocksForDocument(
-                notion,
-                documentEntry,
-                docsFolderPath,
-                workspaceRoot,
-                knownPageUrls,
-                githubToken,
-                documentLog,
-              );
-
-              try {
-                await updatePageContent(notion, pageId, pageTitle, blocks, documentLog);
-                pageUrl = notionPageUrl(pageId);
-                documentLog.info(`Updated page: ${pageTitle}`);
-              } catch (error) {
-                if (!isNotionArchivedError(error) && !isNotionNotFoundError(error)) {
-                  throw error;
-                }
-                documentLog.warn(`Notion page missing or archived, recreating: ${pageTitle}`);
-                pageId = undefined;
-              }
-            }
-          }
-        }
-
-        if (!pageId) {
-          const created = await createPage(notion, pagesParentId, pageTitle);
-          pageId = normalizeNotionId(created.id);
-          syncState.childPageIds.add(pageId);
-          syncState.childPageIdsByTitle.set(pageTitle, pageId);
-          pageUrl = created.url || notionPageUrl(pageId);
-          documentLog.info(`Created page: ${pageTitle}`);
-          if (pageUrl) {
-            documentLog.info(`Page URL: ${pageUrl}`);
-          }
-
-          syncState.entries.set(documentPath, {
-            pageId,
-            title: pageTitle,
-          });
-          syncStateDirty = true;
-          await appendSyncStateRecord(notion, syncState.pageId, documentPath, {
-            pageId,
-            title: pageTitle,
-          });
-
-          const blocks = await buildBlocksForDocument(
-            notion,
-            documentEntry,
-            docsFolderPath,
-            workspaceRoot,
-            knownPageUrls,
-            githubToken,
-            documentLog,
-          );
-          await appendBlocksSafe(notion, pageId, blocks, documentLog);
-        }
-
-        if (pageId && pageUrl) {
-          knownPageUrls.set(documentEntry.absPath, pageUrl);
-          const normalizedPageId = normalizeNotionId(pageId);
-
-          if (
-            !existingSyncStateEntry ||
-            normalizeNotionId(existingSyncStateEntry.pageId) !== normalizedPageId ||
-            existingSyncStateEntry.sourceHash !== documentEntry.sourceHash ||
-            existingSyncStateEntry.title !== pageTitle
-          ) {
-            syncState.entries.set(documentPath, {
-              pageId: normalizedPageId,
-              sourceHash: documentEntry.sourceHash,
-              title: pageTitle,
-            });
-            syncStateDirty = true;
-          }
-
-          syncedPages.push({ pageId, title: pageTitle });
-        }
-      } catch (error) {
-        core.warning(`Failed to sync ${documentEntry.relPath}: ${describeError(error)}`);
-      }
-    }
-
-    if (pageBlockId && pageBlockParentId && syncedPages.length > 0) {
-      await appendPageLinksAfterAnchor(
-        notion,
-        pageBlockParentId,
-        pageBlockId,
-        syncedPages,
-        createLogContext("index"),
-      );
-    }
-
-    const removedStaleEntries = await removeStaleSyncStateEntries(
+    const context: RuntimeContext = {
+      docsFolderPath,
+      githubToken,
       notion,
-      syncState.entries,
-      currentDocumentPaths,
-    );
-    if (removedStaleEntries) {
-      syncStateDirty = true;
+      privateMarkdownPrefix,
+      titlePrefixSeparator: normalizeTitlePrefixSeparator(titlePrefixSeparatorInput),
+      workspaceRoot,
+    };
+
+    if (databaseInput) {
+      const pageBlockId = pageBlockInput ? normalizeNotionId(pageBlockInput) : null;
+      const pageBlockParentId = pageBlockId ? await resolveParentPageId(notion, pageBlockId) : null;
+      await syncDatabaseMode(context, databaseInput, pageBlockId, pageBlockParentId);
+      return;
     }
 
-    if (syncStateDirty) {
-      await writeSyncState(notion, syncState.pageId, syncState.entries);
-    } else {
-      core.info("Sync state unchanged.");
-    }
+    await syncPageMode(context, pageInput, pageBlockInput);
   } catch (error) {
     core.setFailed(describeError(error));
   }
+}
+
+async function syncDatabaseMode(
+  context: RuntimeContext,
+  databaseInput: string,
+  pageBlockId: string | null,
+  pageBlockParentId: string | null,
+): Promise<void> {
+  const repository = process.env.GITHUB_REPOSITORY || "local";
+  const databaseState = await loadDatabaseSyncState(
+    context.notion,
+    databaseInput,
+    repository,
+    createLogContext("database"),
+  );
+  const documents = await loadDocuments(context, databaseState.entries);
+  const knownPageUrls = buildKnownPageUrls(documents);
+  const syncedPages: SyncedPage[] = [];
+
+  for (const documentEntry of documents) {
+    try {
+      const syncedPage = await syncDocumentToDatabase(
+        context,
+        databaseState,
+        repository,
+        documentEntry,
+        knownPageUrls,
+      );
+      if (syncedPage) {
+        syncedPages.push(syncedPage);
+      }
+    } catch (error) {
+      core.warning(`Failed to sync ${documentEntry.relPath}: ${describeError(error)}`);
+    }
+  }
+
+  if (pageBlockId && pageBlockParentId && syncedPages.length) {
+    await appendPageLinksAfterAnchor(
+      context.notion,
+      pageBlockParentId,
+      pageBlockId,
+      syncedPages,
+      createLogContext("index"),
+    );
+  }
+
+  const currentDocumentPaths = getCurrentDocumentPaths(documents);
+  await removeStaleSyncStateEntries(context.notion, databaseState.entries, currentDocumentPaths);
+}
+
+async function syncDocumentToDatabase(
+  context: RuntimeContext,
+  databaseState: DatabaseSyncState,
+  repository: string,
+  documentEntry: MarkdownDocument,
+  knownPageUrls: Map<string, string>,
+): Promise<SyncedPage | null> {
+  const documentLog = createLogContext(documentEntry.relPath);
+  documentLog.info(`Sync start: ${documentEntry.title}`);
+
+  const documentPath = normalizeDocumentPath(documentEntry.relPath);
+  const pageTitle = buildNotionPageTitle(documentEntry, context.titlePrefixSeparator);
+  const existingSyncStateEntry = databaseState.entries.get(documentPath);
+  let pageId = documentEntry.notionPageId;
+  let pageUrl = documentEntry.notionUrl;
+
+  if (!pageId) {
+    const matchedPageId = databaseState.pageIdsByTitle.get(pageTitle);
+    if (matchedPageId) {
+      pageId = matchedPageId;
+      pageUrl = notionPageUrl(matchedPageId);
+      documentLog.info(`Matched existing Notion database page by generated title: ${pageTitle}`);
+    }
+  }
+
+  const requiresForcedSync =
+    !existingSyncStateEntry?.sourceHash || existingSyncStateEntry.title !== pageTitle;
+
+  if (pageId) {
+    const unchanged =
+      existingSyncStateEntry?.sourceHash === documentEntry.sourceHash &&
+      existingSyncStateEntry.title === pageTitle;
+    if (unchanged) {
+      documentLog.info("Skipping sync: source hash unchanged.");
+      pageUrl = pageUrl ?? notionPageUrl(pageId);
+    } else {
+      const decision = await getSyncDecision(
+        context.notion,
+        pageId,
+        documentEntry.absPath,
+        context.githubToken,
+        context.workspaceRoot,
+        documentLog,
+      );
+
+      if (decision.archivedOrMissing) {
+        documentLog.warn(`Notion page missing or archived, recreating: ${pageTitle}`);
+        pageId = undefined;
+      } else if (decision.skipSync && !requiresForcedSync) {
+        documentLog.info("Skipping sync: Notion is up to date.");
+        pageUrl = pageUrl ?? notionPageUrl(pageId);
+      } else {
+        try {
+          await updateDatabasePage(
+            context,
+            databaseState,
+            repository,
+            documentEntry,
+            pageTitle,
+            pageId,
+            knownPageUrls,
+          );
+          pageUrl = notionPageUrl(pageId);
+          documentLog.info(`Updated page: ${pageTitle}`);
+        } catch (error) {
+          if (!isNotionArchivedError(error) && !isNotionNotFoundError(error)) {
+            throw error;
+          }
+          documentLog.warn(`Notion page missing or archived, recreating: ${pageTitle}`);
+          pageId = undefined;
+        }
+      }
+    }
+  }
+
+  if (!pageId) {
+    const created = await createDatabasePage(
+      context,
+      databaseState,
+      repository,
+      documentEntry,
+      pageTitle,
+      knownPageUrls,
+    );
+    pageId = created.pageId;
+    pageUrl = created.pageUrl;
+  }
+
+  if (!pageId || !pageUrl) {
+    return null;
+  }
+
+  const normalizedPageId = normalizeNotionId(pageId);
+  databaseState.entries.set(documentPath, {
+    pageId: normalizedPageId,
+    sourceHash: documentEntry.sourceHash,
+    title: pageTitle,
+  });
+  knownPageUrls.set(documentEntry.absPath, pageUrl);
+  return { pageId: normalizedPageId, title: pageTitle };
+}
+
+async function updateDatabasePage(
+  context: RuntimeContext,
+  databaseState: DatabaseSyncState,
+  repository: string,
+  documentEntry: MarkdownDocument,
+  pageTitle: string,
+  pageId: string,
+  knownPageUrls: Map<string, string>,
+): Promise<void> {
+  const documentPath = normalizeDocumentPath(documentEntry.relPath);
+  const documentLog = createLogContext(documentEntry.relPath);
+  const propertiesBeforeContent = buildDatabasePageProperties(
+    databaseState.propertyNames,
+    repository,
+    documentPath,
+    pageTitle,
+    undefined,
+    buildSourceUrl(context.workspaceRoot, documentEntry.absPath),
+  );
+  const blocks = await buildBlocksForDocument(
+    context.notion,
+    documentEntry,
+    context.docsFolderPath,
+    context.workspaceRoot,
+    knownPageUrls,
+    context.githubToken,
+    documentLog,
+  );
+  await updateDataSourcePageContent(
+    context.notion,
+    pageId,
+    propertiesBeforeContent,
+    blocks,
+    documentLog,
+  );
+  await updateDataSourcePageProperties(
+    context.notion,
+    pageId,
+    buildDatabasePageProperties(
+      databaseState.propertyNames,
+      repository,
+      documentPath,
+      pageTitle,
+      documentEntry.sourceHash,
+      buildSourceUrl(context.workspaceRoot, documentEntry.absPath),
+    ),
+  );
+}
+
+async function createDatabasePage(
+  context: RuntimeContext,
+  databaseState: DatabaseSyncState,
+  repository: string,
+  documentEntry: MarkdownDocument,
+  pageTitle: string,
+  knownPageUrls: Map<string, string>,
+): Promise<{ pageId: string; pageUrl: string }> {
+  const documentPath = normalizeDocumentPath(documentEntry.relPath);
+  const documentLog = createLogContext(documentEntry.relPath);
+  const created = await createDataSourcePage(
+    context.notion,
+    databaseState.dataSourceId,
+    buildDatabasePageProperties(
+      databaseState.propertyNames,
+      repository,
+      documentPath,
+      pageTitle,
+      undefined,
+      buildSourceUrl(context.workspaceRoot, documentEntry.absPath),
+    ),
+  );
+  const pageId = normalizeNotionId(created.id);
+  const pageUrl = created.url || notionPageUrl(pageId);
+  documentLog.info(`Created database page: ${pageTitle}`);
+  documentLog.info(`Page URL: ${pageUrl}`);
+
+  databaseState.entries.set(documentPath, {
+    pageId,
+    title: pageTitle,
+  });
+
+  const blocks = await buildBlocksForDocument(
+    context.notion,
+    documentEntry,
+    context.docsFolderPath,
+    context.workspaceRoot,
+    knownPageUrls,
+    context.githubToken,
+    documentLog,
+  );
+  await appendBlocksSafe(context.notion, pageId, blocks, documentLog);
+  await updateDataSourcePageProperties(
+    context.notion,
+    pageId,
+    buildDatabasePageProperties(
+      databaseState.propertyNames,
+      repository,
+      documentPath,
+      pageTitle,
+      documentEntry.sourceHash,
+      buildSourceUrl(context.workspaceRoot, documentEntry.absPath),
+    ),
+  );
+  return { pageId, pageUrl };
+}
+
+async function syncPageMode(
+  context: RuntimeContext,
+  pageInput: string,
+  pageBlockInput: string,
+): Promise<void> {
+  const pageBlockId = pageBlockInput ? normalizeNotionId(pageBlockInput) : null;
+  const pageBlockParentId = pageBlockId
+    ? await resolveParentPageId(context.notion, pageBlockId)
+    : null;
+  const pagesParentId = pageInput ? normalizeNotionId(pageInput) : pageBlockParentId;
+  if (!pagesParentId) {
+    throw new Error("Either database_id, page_block_id, or page_id must be provided.");
+  }
+
+  const syncState = await loadSyncState(context.notion, pagesParentId);
+  const documents = await loadDocuments(context, syncState.entries);
+  const knownPageUrls = buildKnownPageUrls(documents);
+  const syncedPages: SyncedPage[] = [];
+  let syncStateDirty = false;
+
+  for (const documentEntry of documents) {
+    try {
+      const result = await syncDocumentToPage(
+        context,
+        syncState,
+        pagesParentId,
+        documentEntry,
+        knownPageUrls,
+      );
+      if (result.syncedPage) {
+        syncedPages.push(result.syncedPage);
+      }
+      syncStateDirty = syncStateDirty || result.syncStateDirty;
+    } catch (error) {
+      core.warning(`Failed to sync ${documentEntry.relPath}: ${describeError(error)}`);
+    }
+  }
+
+  if (pageBlockId && pageBlockParentId && syncedPages.length) {
+    await appendPageLinksAfterAnchor(
+      context.notion,
+      pageBlockParentId,
+      pageBlockId,
+      syncedPages,
+      createLogContext("index"),
+    );
+  }
+
+  const removedStaleEntries = await removeStaleSyncStateEntries(
+    context.notion,
+    syncState.entries,
+    getCurrentDocumentPaths(documents),
+  );
+  syncStateDirty = syncStateDirty || removedStaleEntries;
+
+  if (syncStateDirty) {
+    await writeSyncState(context.notion, syncState.pageId, syncState.entries);
+  } else {
+    core.info("Sync state unchanged.");
+  }
+}
+
+type PageSyncState = Awaited<ReturnType<typeof loadSyncState>>;
+
+async function syncDocumentToPage(
+  context: RuntimeContext,
+  syncState: PageSyncState,
+  pagesParentId: string,
+  documentEntry: MarkdownDocument,
+  knownPageUrls: Map<string, string>,
+): Promise<{ syncStateDirty: boolean; syncedPage: SyncedPage | null }> {
+  const documentLog = createLogContext(documentEntry.relPath);
+  documentLog.info(`Sync start: ${documentEntry.title}`);
+  const documentPath = normalizeDocumentPath(documentEntry.relPath);
+  const pageTitle = buildNotionPageTitle(documentEntry, context.titlePrefixSeparator);
+  let pageId = documentEntry.notionPageId;
+  let pageUrl = documentEntry.notionUrl;
+  const existingSyncStateEntry = syncState.entries.get(documentPath);
+  let syncStateDirty = false;
+
+  const requiresForcedSync =
+    !existingSyncStateEntry?.sourceHash || existingSyncStateEntry.title !== pageTitle;
+  if (
+    pageId &&
+    existingSyncStateEntry?.pageId &&
+    !syncState.childPageIds.has(normalizeNotionId(pageId))
+  ) {
+    documentLog.warn("Notion page no longer exists under the target parent, recreating.");
+    pageId = undefined;
+    pageUrl = undefined;
+  }
+
+  if (!pageId) {
+    const matchedPageId = syncState.childPageIdsByTitle.get(pageTitle);
+    if (matchedPageId) {
+      pageId = matchedPageId;
+      pageUrl = notionPageUrl(matchedPageId);
+      documentLog.info(`Matched existing Notion child page by generated title: ${pageTitle}`);
+    }
+  }
+
+  if (pageId) {
+    if (
+      existingSyncStateEntry?.sourceHash === documentEntry.sourceHash &&
+      existingSyncStateEntry.title === pageTitle
+    ) {
+      documentLog.info("Skipping sync: source hash unchanged.");
+      pageUrl = pageUrl ?? notionPageUrl(pageId);
+    } else {
+      const decision = await getSyncDecision(
+        context.notion,
+        pageId,
+        documentEntry.absPath,
+        context.githubToken,
+        context.workspaceRoot,
+        documentLog,
+      );
+
+      if (decision.archivedOrMissing) {
+        documentLog.warn(`Notion page missing or archived, recreating: ${pageTitle}`);
+        pageId = undefined;
+      } else if (decision.skipSync && !requiresForcedSync) {
+        documentLog.info("Skipping sync: Notion is up to date.");
+        pageUrl = pageUrl ?? notionPageUrl(pageId);
+      } else {
+        try {
+          const blocks = await buildBlocksForDocument(
+            context.notion,
+            documentEntry,
+            context.docsFolderPath,
+            context.workspaceRoot,
+            knownPageUrls,
+            context.githubToken,
+            documentLog,
+          );
+          await updatePageContent(context.notion, pageId, pageTitle, blocks, documentLog);
+          pageUrl = notionPageUrl(pageId);
+          documentLog.info(`Updated page: ${pageTitle}`);
+        } catch (error) {
+          if (!isNotionArchivedError(error) && !isNotionNotFoundError(error)) {
+            throw error;
+          }
+          documentLog.warn(`Notion page missing or archived, recreating: ${pageTitle}`);
+          pageId = undefined;
+        }
+      }
+    }
+  }
+
+  if (!pageId) {
+    const created = await createPage(context.notion, pagesParentId, pageTitle);
+    pageId = normalizeNotionId(created.id);
+    syncState.childPageIds.add(pageId);
+    syncState.childPageIdsByTitle.set(pageTitle, pageId);
+    pageUrl = created.url || notionPageUrl(pageId);
+    documentLog.info(`Created page: ${pageTitle}`);
+    documentLog.info(`Page URL: ${pageUrl}`);
+
+    syncState.entries.set(documentPath, {
+      pageId,
+      title: pageTitle,
+    });
+    syncStateDirty = true;
+    await appendSyncStateRecord(context.notion, syncState.pageId, documentPath, {
+      pageId,
+      title: pageTitle,
+    });
+
+    const blocks = await buildBlocksForDocument(
+      context.notion,
+      documentEntry,
+      context.docsFolderPath,
+      context.workspaceRoot,
+      knownPageUrls,
+      context.githubToken,
+      documentLog,
+    );
+    await appendBlocksSafe(context.notion, pageId, blocks, documentLog);
+  }
+
+  if (!pageId || !pageUrl) {
+    return { syncStateDirty, syncedPage: null };
+  }
+
+  const normalizedPageId = normalizeNotionId(pageId);
+  if (
+    !existingSyncStateEntry ||
+    normalizeNotionId(existingSyncStateEntry.pageId) !== normalizedPageId ||
+    existingSyncStateEntry.sourceHash !== documentEntry.sourceHash ||
+    existingSyncStateEntry.title !== pageTitle
+  ) {
+    syncState.entries.set(documentPath, {
+      pageId: normalizedPageId,
+      sourceHash: documentEntry.sourceHash,
+      title: pageTitle,
+    });
+    syncStateDirty = true;
+  }
+
+  knownPageUrls.set(documentEntry.absPath, pageUrl);
+  return { syncStateDirty, syncedPage: { pageId: normalizedPageId, title: pageTitle } };
+}
+
+async function loadDocuments(
+  context: RuntimeContext,
+  syncStateEntries: Map<string, SyncStateEntry>,
+): Promise<MarkdownDocument[]> {
+  const markdownFiles = await collectMarkdownFiles(
+    context.docsFolderPath,
+    context.privateMarkdownPrefix,
+  );
+  if (!markdownFiles.length) {
+    core.warning(`No markdown files found in ${context.docsFolderPath}.`);
+  }
+  return loadMarkdownDocuments(markdownFiles, context.docsFolderPath, syncStateEntries);
+}
+
+function buildKnownPageUrls(documents: MarkdownDocument[]): Map<string, string> {
+  const knownPageUrls = new Map<string, string>();
+  for (const documentEntry of documents) {
+    if (documentEntry.notionPageId) {
+      knownPageUrls.set(documentEntry.absPath, notionPageUrl(documentEntry.notionPageId));
+    }
+  }
+  return knownPageUrls;
+}
+
+function getCurrentDocumentPaths(documents: MarkdownDocument[]): Set<string> {
+  return new Set(documents.map((documentEntry) => normalizeDocumentPath(documentEntry.relPath)));
 }
 
 async function removeStaleSyncStateEntries(

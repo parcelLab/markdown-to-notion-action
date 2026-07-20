@@ -30,6 +30,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
 
-      - name: Update floating v2 tag (non-blocking)
+      - name: Update floating v3 tag (non-blocking)
         continue-on-error: true
-        run: ./.github/update-v2-tag.sh
+        run: ./.github/update-v3-tag.sh
