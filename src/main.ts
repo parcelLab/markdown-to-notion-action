@@ -1,12 +1,10 @@
+import * as path from "path";
+
 import * as core from "@actions/core";
 import { Client } from "@notionhq/client";
 
 import { appendBlocksSafe, appendPageLinksAfterAnchor } from "./block-sync.js";
-import {
-  buildDatabasePageProperties,
-  buildSourceUrl,
-  loadDatabaseSyncState,
-} from "./database-sync-state.js";
+import { buildDatabasePageProperties, loadDatabaseSyncState } from "./database-sync-state.js";
 import {
   buildBlocksForDocument,
   buildNotionPageTitle,
@@ -43,6 +41,7 @@ import type { DatabaseSyncState } from "./database-sync-state.js";
 import type { MarkdownDocument, SyncStateEntry, SyncedPage } from "./sync-types.js";
 
 type RuntimeContext = {
+  docsFolder: string;
   docsFolderPath: string;
   githubToken: string | null;
   notion: Client;
@@ -83,6 +82,9 @@ async function run(): Promise<void> {
     const notion = new Client({ auth: notionToken });
     const workspaceRoot = process.env.GITHUB_WORKSPACE || process.cwd();
     const docsFolderPath = resolveInsideRoot(workspaceRoot, docsFolder, "docs_folder");
+    const docsFolderForSync =
+      normalizeDocumentPath(path.relative(workspaceRoot, docsFolderPath)).replace(/\/+$/, "") ||
+      ".";
     await ensureDirectoryExists(docsFolderPath);
 
     const privateMarkdownPrefix = normalizePrivateMarkdownPrefix(privateMarkdownPrefixInput);
@@ -93,6 +95,7 @@ async function run(): Promise<void> {
     }
 
     const context: RuntimeContext = {
+      docsFolder: docsFolderForSync,
       docsFolderPath,
       githubToken,
       notion,
@@ -102,9 +105,7 @@ async function run(): Promise<void> {
     };
 
     if (databaseInput) {
-      const pageBlockId = pageBlockInput ? normalizeNotionId(pageBlockInput) : null;
-      const pageBlockParentId = pageBlockId ? await resolveParentPageId(notion, pageBlockId) : null;
-      await syncDatabaseMode(context, databaseInput, pageBlockId, pageBlockParentId);
+      await syncDatabaseMode(context, databaseInput);
       return;
     }
 
@@ -114,12 +115,7 @@ async function run(): Promise<void> {
   }
 }
 
-async function syncDatabaseMode(
-  context: RuntimeContext,
-  databaseInput: string,
-  pageBlockId: string | null,
-  pageBlockParentId: string | null,
-): Promise<void> {
+async function syncDatabaseMode(context: RuntimeContext, databaseInput: string): Promise<void> {
   const repository = process.env.GITHUB_REPOSITORY || "local";
   const databaseState = await loadDatabaseSyncState(
     context.notion,
@@ -127,8 +123,12 @@ async function syncDatabaseMode(
     repository,
     createLogContext("database"),
   );
-  const documents = await loadDocuments(context, databaseState.entries);
-  const knownPageUrls = buildKnownPageUrls(documents);
+  const documents = await loadDocuments(context, new Map());
+  const knownPageUrls = buildKnownPageUrlsFromSyncEntries(
+    context,
+    documents,
+    databaseState.entries,
+  );
   const syncedPages: SyncedPage[] = [];
 
   for (const documentEntry of documents) {
@@ -148,17 +148,7 @@ async function syncDatabaseMode(
     }
   }
 
-  if (pageBlockId && pageBlockParentId && syncedPages.length) {
-    await appendPageLinksAfterAnchor(
-      context.notion,
-      pageBlockParentId,
-      pageBlockId,
-      syncedPages,
-      createLogContext("index"),
-    );
-  }
-
-  const currentDocumentPaths = getCurrentDocumentPaths(documents);
+  const currentDocumentPaths = getCurrentDatabaseDocumentPaths(context, documents);
   await removeStaleSyncStateEntries(context.notion, databaseState.entries, currentDocumentPaths);
 }
 
@@ -172,11 +162,11 @@ async function syncDocumentToDatabase(
   const documentLog = createLogContext(documentEntry.relPath);
   documentLog.info(`Sync start: ${documentEntry.title}`);
 
-  const documentPath = normalizeDocumentPath(documentEntry.relPath);
+  const documentPath = getDatabaseDocumentPath(context, documentEntry);
   const pageTitle = buildNotionPageTitle(documentEntry, context.titlePrefixSeparator);
   const existingSyncStateEntry = databaseState.entries.get(documentPath);
-  let pageId = documentEntry.notionPageId;
-  let pageUrl = documentEntry.notionUrl;
+  let pageId = existingSyncStateEntry?.pageId ?? documentEntry.notionPageId;
+  let pageUrl = pageId ? notionPageUrl(pageId) : documentEntry.notionUrl;
 
   if (!pageId) {
     const matchedPageId = databaseState.pageIdsByTitle.get(pageTitle);
@@ -273,15 +263,15 @@ async function updateDatabasePage(
   pageId: string,
   knownPageUrls: Map<string, string>,
 ): Promise<void> {
-  const documentPath = normalizeDocumentPath(documentEntry.relPath);
+  const documentPath = getDatabaseDocumentPath(context, documentEntry);
   const documentLog = createLogContext(documentEntry.relPath);
   const propertiesBeforeContent = buildDatabasePageProperties(
     databaseState.propertyNames,
     repository,
+    context.docsFolder,
     documentPath,
     pageTitle,
     undefined,
-    buildSourceUrl(context.workspaceRoot, documentEntry.absPath),
   );
   const blocks = await buildBlocksForDocument(
     context.notion,
@@ -305,10 +295,10 @@ async function updateDatabasePage(
     buildDatabasePageProperties(
       databaseState.propertyNames,
       repository,
+      context.docsFolder,
       documentPath,
       pageTitle,
       documentEntry.sourceHash,
-      buildSourceUrl(context.workspaceRoot, documentEntry.absPath),
     ),
   );
 }
@@ -321,7 +311,7 @@ async function createDatabasePage(
   pageTitle: string,
   knownPageUrls: Map<string, string>,
 ): Promise<{ pageId: string; pageUrl: string }> {
-  const documentPath = normalizeDocumentPath(documentEntry.relPath);
+  const documentPath = getDatabaseDocumentPath(context, documentEntry);
   const documentLog = createLogContext(documentEntry.relPath);
   const created = await createDataSourcePage(
     context.notion,
@@ -329,10 +319,10 @@ async function createDatabasePage(
     buildDatabasePageProperties(
       databaseState.propertyNames,
       repository,
+      context.docsFolder,
       documentPath,
       pageTitle,
       undefined,
-      buildSourceUrl(context.workspaceRoot, documentEntry.absPath),
     ),
   );
   const pageId = normalizeNotionId(created.id);
@@ -361,10 +351,10 @@ async function createDatabasePage(
     buildDatabasePageProperties(
       databaseState.propertyNames,
       repository,
+      context.docsFolder,
       documentPath,
       pageTitle,
       documentEntry.sourceHash,
-      buildSourceUrl(context.workspaceRoot, documentEntry.absPath),
     ),
   );
   return { pageId, pageUrl };
@@ -597,8 +587,34 @@ function buildKnownPageUrls(documents: MarkdownDocument[]): Map<string, string> 
   return knownPageUrls;
 }
 
+function buildKnownPageUrlsFromSyncEntries(
+  context: RuntimeContext,
+  documents: MarkdownDocument[],
+  syncStateEntries: Map<string, SyncStateEntry>,
+): Map<string, string> {
+  const knownPageUrls = new Map<string, string>();
+  for (const documentEntry of documents) {
+    const syncStateEntry = syncStateEntries.get(getDatabaseDocumentPath(context, documentEntry));
+    if (syncStateEntry?.pageId) {
+      knownPageUrls.set(documentEntry.absPath, notionPageUrl(syncStateEntry.pageId));
+    }
+  }
+  return knownPageUrls;
+}
+
 function getCurrentDocumentPaths(documents: MarkdownDocument[]): Set<string> {
   return new Set(documents.map((documentEntry) => normalizeDocumentPath(documentEntry.relPath)));
+}
+
+function getCurrentDatabaseDocumentPaths(
+  context: RuntimeContext,
+  documents: MarkdownDocument[],
+): Set<string> {
+  return new Set(documents.map((documentEntry) => getDatabaseDocumentPath(context, documentEntry)));
+}
+
+function getDatabaseDocumentPath(context: RuntimeContext, documentEntry: MarkdownDocument): string {
+  return normalizeDocumentPath(path.relative(context.workspaceRoot, documentEntry.absPath));
 }
 
 async function removeStaleSyncStateEntries(

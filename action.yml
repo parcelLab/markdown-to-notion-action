@@ -1,5 +1,5 @@
 name: "Markdown to Notion"
-description: "Syncs Markdown files to Notion database pages."
+description: "Syncs Markdown files to Notion database items."
 icon: "book"
 color: "purple"
 
@@ -26,7 +26,7 @@ inputs:
     required: false
 
   database_id:
-    description: "Notion database ID/URL where files will be created as database pages"
+    description: "Notion database ID/URL where files will be created as database items"
     required: false
 
   private_markdown_prefix:

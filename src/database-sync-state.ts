@@ -12,14 +12,14 @@ import type { SyncStateEntry } from "./sync-types.js";
 
 const PROPERTY_PATH = "Path";
 const PROPERTY_REPOSITORY = "Repository";
+const PROPERTY_DOCS_FOLDER = "Docs Folder";
 const PROPERTY_SOURCE_HASH = "Source Hash";
-const PROPERTY_SOURCE_URL = "Source URL";
 const PROPERTY_LAST_SYNCED_AT = "Last Synced At";
 const REQUIRED_PROPERTY_TYPES = {
   [PROPERTY_PATH]: "rich_text",
   [PROPERTY_REPOSITORY]: "rich_text",
+  [PROPERTY_DOCS_FOLDER]: "rich_text",
   [PROPERTY_SOURCE_HASH]: "rich_text",
-  [PROPERTY_SOURCE_URL]: "url",
   [PROPERTY_LAST_SYNCED_AT]: "date",
 } as const;
 
@@ -45,10 +45,10 @@ export type DatabaseSyncState = {
 
 export type DatabasePropertyNames = {
   lastSyncedAt: string;
+  docsFolder: string;
   path: string;
   repository: string;
   sourceHash: string;
-  sourceUrl: string;
   title: string;
 };
 
@@ -87,10 +87,10 @@ export async function loadDatabaseSyncState(
 export function buildDatabasePageProperties(
   propertyNames: DatabasePropertyNames,
   repository: string,
+  docsFolder: string,
   documentPath: string,
   title: string,
   sourceHash: string | undefined,
-  sourceUrl: string | null,
 ): PageProperties {
   return {
     [propertyNames.title]: {
@@ -117,6 +117,14 @@ export function buildDatabasePageProperties(
         },
       ],
     },
+    [propertyNames.docsFolder]: {
+      rich_text: [
+        {
+          type: "text",
+          text: { content: docsFolder },
+        },
+      ],
+    },
     [propertyNames.sourceHash]: {
       rich_text: sourceHash
         ? [
@@ -126,9 +134,6 @@ export function buildDatabasePageProperties(
             },
           ]
         : [],
-    },
-    [propertyNames.sourceUrl]: {
-      url: sourceUrl,
     },
     [propertyNames.lastSyncedAt]: {
       date: {
@@ -225,11 +230,11 @@ function getMissingDataSourceProperties(
   if (!properties[PROPERTY_REPOSITORY]) {
     missing[PROPERTY_REPOSITORY] = { rich_text: {} };
   }
+  if (!properties[PROPERTY_DOCS_FOLDER]) {
+    missing[PROPERTY_DOCS_FOLDER] = { rich_text: {} };
+  }
   if (!properties[PROPERTY_SOURCE_HASH]) {
     missing[PROPERTY_SOURCE_HASH] = { rich_text: {} };
-  }
-  if (!properties[PROPERTY_SOURCE_URL]) {
-    missing[PROPERTY_SOURCE_URL] = { url: {} };
   }
   if (!properties[PROPERTY_LAST_SYNCED_AT]) {
     missing[PROPERTY_LAST_SYNCED_AT] = { date: {} };
@@ -255,11 +260,11 @@ function getPropertyNames(properties: DataSourceProperties): DatabasePropertyNam
   }
 
   return {
+    docsFolder: PROPERTY_DOCS_FOLDER,
     lastSyncedAt: PROPERTY_LAST_SYNCED_AT,
     path: PROPERTY_PATH,
     repository: PROPERTY_REPOSITORY,
     sourceHash: PROPERTY_SOURCE_HASH,
-    sourceUrl: PROPERTY_SOURCE_URL,
     title,
   };
 }
@@ -398,19 +403,4 @@ function getPageProperty(
     return null;
   }
   return (page.properties as Record<string, PagePropertyValue | undefined>)[propertyName] ?? null;
-}
-
-export function buildSourceUrl(workspaceRoot: string, absolutePath: string): string | null {
-  const repository = process.env.GITHUB_REPOSITORY;
-  const serverUrl = (process.env.GITHUB_SERVER_URL || "https://github.com").replace(/\/+$/, "");
-  const ref = process.env.GITHUB_SHA || process.env.GITHUB_REF_NAME;
-  if (!repository || !ref) {
-    return null;
-  }
-
-  const relativePath = absolutePath
-    .slice(workspaceRoot.length)
-    .replace(/^[/\\]+/, "")
-    .replaceAll("\\", "/");
-  return `${serverUrl}/${repository}/blob/${ref}/${relativePath}`;
 }

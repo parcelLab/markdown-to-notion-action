@@ -1,7 +1,7 @@
 {
   "name": "markdown-to-notion-action",
   "version": "1.0.0",
-  "description": "Syncs Markdown files to Notion database pages.",
+  "description": "Syncs Markdown files to Notion database items.",
   "license": "MIT",
   "type": "module",
   "main": "src/main.ts",
