@@ -59,7 +59,7 @@ async function clearChildren(
 ): Promise<void> {
   logContext.info(`Starting block deletion for ${blockId}...`);
   const children = await listAllChildren(notion, blockId);
-  if (!children.length) {
+  if (children.length === 0) {
     logContext.info("No existing blocks to clear.");
     return;
   }
@@ -77,14 +77,14 @@ export async function syncPageBlocks(
   blocks: NotionBlock[],
   logContext: LogContext = defaultLogContext,
 ): Promise<void> {
-  if (!blocks.length) {
+  if (blocks.length === 0) {
     await clearChildren(notion, pageId, logContext);
     return;
   }
 
   logContext.info(`Loading existing blocks for ${pageId}...`);
   const existingChildren = await listAllChildren(notion, pageId);
-  if (!existingChildren.length) {
+  if (existingChildren.length === 0) {
     await appendBlocksSafe(notion, pageId, blocks, logContext);
     return;
   }
@@ -115,24 +115,27 @@ export async function syncPageBlocks(
     const incoming = blocks[index];
     const result = await syncBlockPair(notion, pageId, existing, incoming, logContext);
     switch (result.action) {
-      case "unchanged":
+      case "unchanged": {
         stats.unchanged += 1;
         lastBlockId = existingId;
         break;
-      case "updated":
+      }
+      case "updated": {
         stats.updated += 1;
         lastBlockId = existingId;
         break;
-      case "replaced":
+      }
+      case "replaced": {
         stats.replaced += 1;
         lastBlockId = result.newBlockId ?? existingId;
         break;
+      }
     }
   }
 
   if (blocks.length > existingChildren.length) {
     const remaining = blocks.slice(sharedCount);
-    if (remaining.length) {
+    if (remaining.length > 0) {
       if (lastBlockId) {
         await appendBlocksAfter(notion, pageId, lastBlockId, remaining, logContext);
       } else {
@@ -158,7 +161,7 @@ export async function appendBlocksSafe(
   blocks: NotionBlock[],
   logContext: LogContext = defaultLogContext,
 ): Promise<void> {
-  if (!blocks.length) {
+  if (blocks.length === 0) {
     return;
   }
 
@@ -253,7 +256,7 @@ export async function appendPageLinksAfterAnchor(
     });
   }
 
-  const existingPageIds = existingLinkBlocks.map(getLinkToPageId);
+  const existingPageIds = existingLinkBlocks.map((block) => getLinkToPageId(block));
   if (arePageIdListsEqual(existingPageIds, desiredPageIds)) {
     logContext.info("Index links unchanged.");
     return;
@@ -264,7 +267,7 @@ export async function appendPageLinksAfterAnchor(
     await deleteBlocks(notion, existingLinkBlocks, logContext);
   }
 
-  if (!blocks.length) {
+  if (blocks.length === 0) {
     logContext.info("Index anchor cleared. No pages to link.");
     return;
   }
@@ -286,8 +289,8 @@ async function syncBlockPair(
   }
 
   const incomingChildren = getBlockChildren(incoming);
-  const existingHasChildren = blockHasChildrenExisting(existing);
-  const hasChildrenToSync = incomingChildren.length > 0 || existingHasChildren;
+  const hasExistingChildren = hasExistingBlockChildren(existing);
+  const hasChildrenToSync = incomingChildren.length > 0 || hasExistingChildren;
 
   if (existingType === incoming.type) {
     if (areBlocksEquivalent(existing, incoming)) {
@@ -345,7 +348,7 @@ function getBlockChildren(block: NotionBlock): NotionBlock[] {
   return Array.isArray(children) ? (children as NotionBlock[]) : [];
 }
 
-function blockHasChildrenExisting(block: PartialBlockObjectResponse): boolean {
+function hasExistingBlockChildren(block: PartialBlockObjectResponse): boolean {
   if (!block || typeof block !== "object") {
     return false;
   }
@@ -471,7 +474,7 @@ function buildBlockUpdateRequest(blockId: string, block: NotionBlock): BlockUpda
         callout: {
           rich_text: block.callout?.rich_text ?? [],
           color: block.callout?.color ?? "default",
-          ...(icon ? { icon } : {}),
+          ...(icon && { icon }),
         },
       };
     }
@@ -520,8 +523,9 @@ function buildBlockUpdateRequest(blockId: string, block: NotionBlock): BlockUpda
         },
       };
     }
-    default:
+    default: {
       return null;
+    }
   }
 }
 
@@ -555,7 +559,7 @@ async function deleteBlocks(
   logContext: LogContext,
   concurrencyLimit = 3,
 ): Promise<number> {
-  if (!blocks.length) {
+  if (blocks.length === 0) {
     return 0;
   }
 
@@ -609,7 +613,7 @@ async function appendBlocksAfter(
   blocks: NotionBlock[],
   logContext: LogContext,
 ): Promise<void> {
-  if (!blocks.length) {
+  if (blocks.length === 0) {
     return;
   }
 
@@ -721,64 +725,76 @@ function normalizeBlockContent(type: string, content: unknown): unknown | null {
     case "bulleted_list_item":
     case "numbered_list_item":
     case "quote":
-    case "toggle":
+    case "toggle": {
       return {
         color: normalizeColor(record.color),
         rich_text: normalizeRichTextArray(record.rich_text),
       };
+    }
     case "heading_1":
     case "heading_2":
-    case "heading_3":
+    case "heading_3": {
       return {
         color: normalizeColor(record.color),
         is_toggleable: record.is_toggleable === true,
         rich_text: normalizeRichTextArray(record.rich_text),
       };
-    case "callout":
+    }
+    case "callout": {
       return {
         color: normalizeColor(record.color),
         icon: normalizeCalloutIcon(record.icon),
         rich_text: normalizeRichTextArray(record.rich_text),
       };
-    case "to_do":
+    }
+    case "to_do": {
       return {
         checked: record.checked === true,
         color: normalizeColor(record.color),
         rich_text: normalizeRichTextArray(record.rich_text),
       };
-    case "divider":
+    }
+    case "divider": {
       return {};
-    case "code":
+    }
+    case "code": {
       return {
         caption: normalizeRichTextArray(record.caption),
         language: typeof record.language === "string" ? record.language : "",
         rich_text: normalizeRichTextArray(record.rich_text),
       };
-    case "equation":
+    }
+    case "equation": {
       return {
         expression: typeof record.expression === "string" ? record.expression : "",
       };
-    case "image":
+    }
+    case "image": {
       return {
         caption: normalizeRichTextArray(record.caption),
         type: typeof record.type === "string" ? record.type : "",
         url: extractImageUrl(record),
       };
-    case "table_of_contents":
+    }
+    case "table_of_contents": {
       return {
         color: normalizeColor(record.color),
       };
-    case "link_to_page":
+    }
+    case "link_to_page": {
       return {
         database_id: normalizeNotionIdValue(record.database_id),
         page_id: normalizeNotionIdValue(record.page_id),
         type: typeof record.type === "string" ? record.type : "",
       };
+    }
     case "table":
-    case "table_row":
+    case "table_row": {
       return null;
-    default:
+    }
+    default: {
       return null;
+    }
   }
 }
 

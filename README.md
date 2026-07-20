@@ -97,6 +97,8 @@ The action uses Notion as the durable source of truth. In database mode, each Ma
 
 `Docs Folder` stores the configured Markdown root, for example `docs` or `my-custom/docs`. `Path` stores the full Markdown path relative to the repository root, for example `docs/api/auth.md`.
 
+The action hides internal sync columns (`Repository`, `Docs Folder`, and `Source Hash`) in table views when the Notion API allows updating the database view configuration.
+
 On each run, the action queries the database once with pagination, builds a local path-to-page map, and syncs only pages whose source hash changed. When a new database item is created, the row is created before the Markdown blocks are uploaded, so later workflow runs can find it even if the previous run failed after item creation.
 
 If a database row does not exist yet, the action first tries to match an existing database item by the generated Notion page title. Matching only happens for unique titles; duplicate titles are ignored to avoid attaching a Markdown file to the wrong page.

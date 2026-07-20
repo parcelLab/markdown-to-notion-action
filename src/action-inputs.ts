@@ -1,11 +1,11 @@
-export function readInput(name: string, envFallbacks: string[]): string {
+export function readInput(name: string, environmentFallbacks: string[]): string {
   const coreValue = process.env[`INPUT_${name.toUpperCase()}`];
   if (coreValue) {
     return coreValue.trim();
   }
 
-  for (const env of envFallbacks) {
-    const value = process.env[env];
+  for (const environment of environmentFallbacks) {
+    const value = process.env[environment];
     if (value) {
       return value.trim();
     }

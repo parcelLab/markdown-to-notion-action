@@ -34,10 +34,10 @@ const TABLE_OF_CONTENTS_LABELS = new Set([
 
 export function extractTitle(markdown: string): string | null {
   const tokens = markdownParser.parse(markdown, {});
-  for (let i = 0; i < tokens.length; i += 1) {
-    const token = tokens[i];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
     if (token.type === "heading_open" && token.tag === "h1") {
-      const inline = tokens[i + 1];
+      const inline = tokens[index + 1];
       if (inline && inline.type === "inline") {
         const title = inline.content.trim();
         if (title.length > 0) {
@@ -189,7 +189,7 @@ function normalizeLink(href: string, options: MarkdownToNotionOptions): string |
   try {
     const url = new URL(trimmed);
     if (["http:", "https:", "mailto:", "tel:"].includes(url.protocol)) {
-      return url.toString();
+      return url.href;
     }
   } catch {
     return null;
@@ -211,7 +211,7 @@ function restoreStandaloneImageBlocks(
   options: MarkdownToNotionOptions,
 ): NotionBlock[] {
   const markdownImages = extractStandaloneMarkdownImages(markdown);
-  if (!markdownImages.length) {
+  if (markdownImages.length === 0) {
     return blocks;
   }
   const replacementState: ImageReplacementState = { nextImageIndex: 0 };
@@ -343,7 +343,7 @@ function resolveImageUrl(source: string, options: MarkdownToNotionOptions): stri
   try {
     const imageUrl = new URL(trimmedSource);
     if (imageUrl.protocol === "http:" || imageUrl.protocol === "https:") {
-      return imageUrl.toString();
+      return imageUrl.href;
     }
   } catch {
     return null;
@@ -359,7 +359,7 @@ function createImageBlock(url: string, altText: string): NotionBlock {
     image: {
       type: "external",
       external: { url },
-      ...(caption ? { caption } : {}),
+      ...(caption && { caption }),
     },
   };
 }
@@ -402,29 +402,29 @@ function replaceBlockChildren(
 
 function applyTableOfContents(blocks: NotionBlock[]): NotionBlock[] {
   const result: NotionBlock[] = [];
-  let skipNextList = false;
+  let isSkipNextList = false;
 
   for (const block of blocks) {
     if (
-      skipNextList &&
+      isSkipNextList &&
       block.type !== "bulleted_list_item" &&
       block.type !== "numbered_list_item"
     ) {
-      skipNextList = false;
+      isSkipNextList = false;
     }
 
     const label = extractBlockText(block);
     if (label && isTableOfContentsLabel(label)) {
       result.push(createTableOfContentsBlock());
-      skipNextList = true;
+      isSkipNextList = true;
       continue;
     }
 
-    if (skipNextList) {
+    if (isSkipNextList) {
       if (block.type === "bulleted_list_item" || block.type === "numbered_list_item") {
         continue;
       }
-      skipNextList = false;
+      isSkipNextList = false;
     }
 
     result.push(block);

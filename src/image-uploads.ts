@@ -1,5 +1,5 @@
 import { Client } from "@notionhq/client";
-import * as path from "path";
+import path from "node:path";
 import { runStepWithLogging } from "./logging.js";
 import { notionRequest } from "./notion-api.js";
 import type { LogContext } from "./logging.js";
@@ -29,7 +29,7 @@ export async function uploadImageBlocks(
   for (const block of blocks) {
     await uploadImageBlock(notion, block, githubToken, logContext);
     const children = getBlockChildren(block);
-    if (children.length) {
+    if (children.length > 0) {
       await uploadImageBlocks(notion, children, githubToken, logContext);
     }
   }
@@ -109,7 +109,9 @@ async function uploadImageBlock(
   );
 
   const uploadId = fileUpload.id;
-  const blob = new Blob([new Uint8Array(imageFile.buffer)], { type: imageFile.contentType });
+  const arrayBuffer = new ArrayBuffer(imageFile.buffer.byteLength);
+  new Uint8Array(arrayBuffer).set(imageFile.buffer);
+  const blob = new Blob([arrayBuffer], { type: imageFile.contentType });
 
   /**
    * Notion API: Send a file upload
@@ -137,7 +139,7 @@ async function uploadImageBlock(
   block.image = {
     type: "file_upload",
     file_upload: { id: uploadId },
-    ...(caption ? { caption } : {}),
+    ...(caption && { caption }),
   };
   logContext.info(`Image block now references Notion upload ${uploadId} for ${imageFile.path}.`);
 }
@@ -152,7 +154,7 @@ function getGitHubContentsRequestFromRawUrl(rawUrl: string): GitHubContentsReque
 
   let filePath: string | null = null;
   let ownerRepo: string | null = null;
-  let ref: string | null = null;
+  let reference: string | null = null;
 
   if (parsed.hostname === "raw.githubusercontent.com") {
     const segments = parsed.pathname.split("/").filter(Boolean);
@@ -160,7 +162,7 @@ function getGitHubContentsRequestFromRawUrl(rawUrl: string): GitHubContentsReque
       return null;
     }
     ownerRepo = `${segments[0]}/${segments[1]}`;
-    ref = segments[2];
+    reference = segments[2];
     filePath = segments.slice(3).join("/");
   } else {
     const serverUrl = (process.env.GITHUB_SERVER_URL || "https://github.com").replace(/\/+$/, "");
@@ -173,20 +175,23 @@ function getGitHubContentsRequestFromRawUrl(rawUrl: string): GitHubContentsReque
       return null;
     }
     ownerRepo = `${segments[1]}/${segments[2]}`;
-    ref = segments[3];
+    reference = segments[3];
     filePath = segments.slice(4).join("/");
   }
 
-  if (!ownerRepo || !ref || !filePath) {
+  if (!ownerRepo || !reference || !filePath) {
     return null;
   }
 
   const apiBase = (process.env.GITHUB_API_URL || "https://api.github.com").replace(/\/+$/, "");
-  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-  const encodedRef = encodeURIComponent(ref);
+  const encodedPath = filePath
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const encodedReference = encodeURIComponent(reference);
   return {
     path: filePath,
-    url: `${apiBase}/repos/${ownerRepo}/contents/${encodedPath}?ref=${encodedRef}`,
+    url: `${apiBase}/repos/${ownerRepo}/contents/${encodedPath}?ref=${encodedReference}`,
   };
 }
 
@@ -246,18 +251,24 @@ async function fetchGitHubFile(
 
 function getUploadableImageContentType(filePath: string): string | null {
   switch (path.extname(filePath).toLowerCase()) {
-    case ".gif":
+    case ".gif": {
       return "image/gif";
+    }
     case ".jpeg":
-    case ".jpg":
+    case ".jpg": {
       return "image/jpeg";
-    case ".png":
+    }
+    case ".png": {
       return "image/png";
-    case ".svg":
+    }
+    case ".svg": {
       return "image/svg+xml";
-    case ".webp":
+    }
+    case ".webp": {
       return "image/webp";
-    default:
+    }
+    default: {
       return null;
+    }
   }
 }

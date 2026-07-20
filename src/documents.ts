@@ -1,9 +1,9 @@
 import * as core from "@actions/core";
 import { Client } from "@notionhq/client";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import * as frontMatter from "front-matter";
-import * as fs from "fs/promises";
-import * as path from "path";
+import * as fs from "node:fs/promises";
+import path from "node:path";
 import { markdownToNotionBlocks, extractTitle } from "./markdown-to-notion.js";
 import { uploadImageBlocks } from "./image-uploads.js";
 import { normalizeNotionId, notionPageUrl } from "./notion-api.js";
@@ -140,7 +140,7 @@ export function buildNotionPageTitle(documentEntry: MarkdownDocument, separator:
 
   const normalizedSeparator = separator.trim();
   const separatorText = normalizedSeparator ? ` ${normalizedSeparator} ` : " ";
-  return `${folderPath.replaceAll("/", separatorText)}${separatorText}${baseTitle}`;
+  return `${folderPath.split("/").join(separatorText)}${separatorText}${baseTitle}`;
 }
 
 function normalizeFolderPath(relPath: string): string {
@@ -159,7 +159,7 @@ function resolveRelativeLink(
   workspaceRoot: string,
   knownPageUrls: Map<string, string>,
 ): string | null {
-  const cleaned = href.split("#")[0].split("?")[0];
+  const cleaned = href.split("#", 1)[0].split("?", 1)[0];
   if (!cleaned) {
     return null;
   }
@@ -192,17 +192,17 @@ function buildGitHubRawUrl(repoRelativePath: string): string | null {
     return null;
   }
 
-  const ref = process.env.GITHUB_SHA || process.env.GITHUB_REF_NAME;
-  if (!ref) {
+  const reference = process.env.GITHUB_SHA || process.env.GITHUB_REF_NAME;
+  if (!reference) {
     return null;
   }
 
   const normalizedPath = repoRelativePath.split(path.sep).join("/");
   const serverUrl = (process.env.GITHUB_SERVER_URL || "https://github.com").replace(/\/+$/, "");
   if (serverUrl === "https://github.com") {
-    return `https://raw.githubusercontent.com/${ownerRepo}/${ref}/${normalizedPath}`;
+    return `https://raw.githubusercontent.com/${ownerRepo}/${reference}/${normalizedPath}`;
   }
-  return `${serverUrl}/raw/${ownerRepo}/${ref}/${normalizedPath}`;
+  return `${serverUrl}/raw/${ownerRepo}/${reference}/${normalizedPath}`;
 }
 
 function hashMarkdownBody(markdownBody: string): string {

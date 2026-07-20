@@ -1,16 +1,12 @@
-import * as path from "path";
+import path from "node:path";
 
 export function resolveInsideRoot(rootPath: string, inputPath: string, label: string): string {
   // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
   const resolvedRoot = path.resolve(rootPath);
-  let resolvedPath: string;
-  if (path.isAbsolute(inputPath)) {
-    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-    resolvedPath = path.resolve(inputPath);
-  } else {
-    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-    resolvedPath = path.resolve(resolvedRoot, inputPath);
-  }
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+  const resolvedPath = path.isAbsolute(inputPath)
+    ? path.resolve(inputPath)
+    : path.resolve(resolvedRoot, inputPath);
 
   if (!isInsidePath(resolvedRoot, resolvedPath)) {
     throw new Error(`${label} must resolve inside ${resolvedRoot}. Received: ${inputPath}`);

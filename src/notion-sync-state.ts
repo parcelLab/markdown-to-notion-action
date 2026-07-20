@@ -225,7 +225,7 @@ function getCodeBlockContent(block: PartialBlockObjectResponse): string | null {
     return null;
   }
 
-  return code.rich_text.map(getRichTextContent).join("");
+  return code.rich_text.map((value) => getRichTextContent(value)).join("");
 }
 
 function getRichTextContent(value: unknown): string {
@@ -301,11 +301,11 @@ function buildWarningCallout(): NotionBlock {
 function buildCodeBlocks(entries: Map<string, SyncStateEntry>): NotionBlock[] {
   const lines = [buildMetaRecord(), ...buildSortedRecords(entries)];
   const chunks = chunkLines(lines);
-  return chunks.map(buildCodeBlock);
+  return chunks.map((chunk) => buildCodeBlock(chunk));
 }
 
 function buildSortedRecords(entries: Map<string, SyncStateEntry>): string[] {
-  return Array.from(entries.entries())
+  return [...entries]
     .sort(([firstPath], [secondPath]) => firstPath.localeCompare(secondPath))
     .map(([documentPath, entry]) => serializeSyncStateRecord(documentPath, entry));
 }
@@ -324,7 +324,7 @@ function chunkLines(lines: string[]): string[] {
 
   for (const line of lines) {
     const next = current ? `${current}\n${line}` : line;
-    if (next.length <= MAX_CODE_BLOCK_CHARS || !current) {
+    if (!current || next.length <= MAX_CODE_BLOCK_CHARS) {
       current = next;
       continue;
     }

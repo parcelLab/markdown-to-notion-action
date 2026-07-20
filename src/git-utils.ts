@@ -1,13 +1,17 @@
-import { execFile } from "child_process";
-import * as path from "path";
-import { promisify } from "util";
+import { execFile } from "node:child_process";
+import path from "node:path";
+import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
 type CommandResult = { stdout: string; stderr: string };
 
-async function runCommand(command: string, args: string[], cwd?: string): Promise<CommandResult> {
-  const commandResult = await execFileAsync(command, args, {
+async function runCommand(
+  command: string,
+  arguments_: string[],
+  cwd?: string,
+): Promise<CommandResult> {
+  const commandResult = await execFileAsync(command, arguments_, {
     cwd,
     env: process.env,
   });
@@ -56,19 +60,19 @@ async function getLastCommitTimeFromGitHubApi(
   gitPath: string,
   githubToken?: string | null,
 ): Promise<Date | null> {
-  const repository = process.env.GITHUB_REPOSITORY;
-  if (!repository) {
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) {
     return null;
   }
 
   const apiBase = (process.env.GITHUB_API_URL || "https://api.github.com").replace(/\/+$/, "");
-  const url = new URL(`${apiBase}/repos/${repository}/commits`);
+  const url = new URL(`${apiBase}/repos/${repo}/commits`);
   url.searchParams.set("path", gitPath);
   url.searchParams.set("per_page", "1");
 
-  const ref = process.env.GITHUB_SHA || process.env.GITHUB_REF_NAME;
-  if (ref) {
-    url.searchParams.set("sha", ref);
+  const reference = process.env.GITHUB_SHA || process.env.GITHUB_REF_NAME;
+  if (reference) {
+    url.searchParams.set("sha", reference);
   }
 
   const headers: Record<string, string> = {

@@ -1,4 +1,4 @@
-import * as path from "path";
+import path from "node:path";
 
 import * as core from "@actions/core";
 import { Client } from "@notionhq/client";
@@ -52,13 +52,18 @@ type RuntimeContext = {
 
 async function run(): Promise<void> {
   try {
-    const actionRef = process.env.ACTION_SOURCE_REF || process.env.GITHUB_ACTION_REF || "unknown";
+    const actionReference =
+      process.env.ACTION_SOURCE_REF || process.env.GITHUB_ACTION_REF || "unknown";
     const actionRepo =
       process.env.ACTION_SOURCE_REPOSITORY || process.env.GITHUB_ACTION_REPOSITORY || "unknown";
-    core.info(`Action source: ${actionRepo}@${actionRef}`);
+    core.info(`Action source: ${actionRepo}@${actionReference}`);
 
     const notionToken = readInput("notion_token", ["NOTION_TOKEN"]);
     const docsFolder = readInput("docs_folder", ["DOCS_FOLDER"]);
+    if (!notionToken || !docsFolder) {
+      throw new Error("Missing required inputs. Check notion_token and docs_folder.");
+    }
+
     const pageBlockInput = readInput("page_block_id", ["PAGE_BLOCK_ID"]);
     const pageInput = readInput("page_id", ["PAGE_ID"]);
     const databaseInput = readInput("database_id", ["DATABASE_ID"]);
@@ -69,10 +74,6 @@ async function run(): Promise<void> {
       "TITLE_PREFIX_SEPARATOR",
     ]);
     const githubToken = readInput("github_token", ["GITHUB_TOKEN"]);
-
-    if (!notionToken || !docsFolder) {
-      throw new Error("Missing required inputs. Check notion_token and docs_folder.");
-    }
 
     core.setSecret(notionToken);
     if (githubToken) {
@@ -116,11 +117,11 @@ async function run(): Promise<void> {
 }
 
 async function syncDatabaseMode(context: RuntimeContext, databaseInput: string): Promise<void> {
-  const repository = process.env.GITHUB_REPOSITORY || "local";
+  const repo = process.env.GITHUB_REPOSITORY || "local";
   const databaseState = await loadDatabaseSyncState(
     context.notion,
     databaseInput,
-    repository,
+    repo,
     createLogContext("database"),
   );
   const documents = await loadDocuments(context, new Map());
@@ -136,7 +137,7 @@ async function syncDatabaseMode(context: RuntimeContext, databaseInput: string):
       const syncedPage = await syncDocumentToDatabase(
         context,
         databaseState,
-        repository,
+        repo,
         documentEntry,
         knownPageUrls,
       );
@@ -155,7 +156,7 @@ async function syncDatabaseMode(context: RuntimeContext, databaseInput: string):
 async function syncDocumentToDatabase(
   context: RuntimeContext,
   databaseState: DatabaseSyncState,
-  repository: string,
+  repo: string,
   documentEntry: MarkdownDocument,
   knownPageUrls: Map<string, string>,
 ): Promise<SyncedPage | null> {
@@ -181,12 +182,12 @@ async function syncDocumentToDatabase(
     !existingSyncStateEntry?.sourceHash || existingSyncStateEntry.title !== pageTitle;
 
   if (pageId) {
-    const unchanged =
+    const isUnchanged =
       existingSyncStateEntry?.sourceHash === documentEntry.sourceHash &&
       existingSyncStateEntry.title === pageTitle;
-    if (unchanged) {
+    if (isUnchanged) {
       documentLog.info("Skipping sync: source hash unchanged.");
-      pageUrl = pageUrl ?? notionPageUrl(pageId);
+      pageUrl ??= notionPageUrl(pageId);
     } else {
       const decision = await getSyncDecision(
         context.notion,
@@ -197,18 +198,18 @@ async function syncDocumentToDatabase(
         documentLog,
       );
 
-      if (decision.archivedOrMissing) {
+      if (!requiresForcedSync && decision.skipSync) {
+        documentLog.info("Skipping sync: Notion is up to date.");
+        pageUrl ??= notionPageUrl(pageId);
+      } else if (decision.archivedOrMissing) {
         documentLog.warn(`Notion page missing or archived, recreating: ${pageTitle}`);
         pageId = undefined;
-      } else if (decision.skipSync && !requiresForcedSync) {
-        documentLog.info("Skipping sync: Notion is up to date.");
-        pageUrl = pageUrl ?? notionPageUrl(pageId);
       } else {
         try {
           await updateDatabasePage(
             context,
             databaseState,
-            repository,
+            repo,
             documentEntry,
             pageTitle,
             pageId,
@@ -231,7 +232,7 @@ async function syncDocumentToDatabase(
     const created = await createDatabasePage(
       context,
       databaseState,
-      repository,
+      repo,
       documentEntry,
       pageTitle,
       knownPageUrls,
@@ -257,7 +258,7 @@ async function syncDocumentToDatabase(
 async function updateDatabasePage(
   context: RuntimeContext,
   databaseState: DatabaseSyncState,
-  repository: string,
+  repo: string,
   documentEntry: MarkdownDocument,
   pageTitle: string,
   pageId: string,
@@ -267,7 +268,7 @@ async function updateDatabasePage(
   const documentLog = createLogContext(documentEntry.relPath);
   const propertiesBeforeContent = buildDatabasePageProperties(
     databaseState.propertyNames,
-    repository,
+    repo,
     context.docsFolder,
     documentPath,
     pageTitle,
@@ -294,7 +295,7 @@ async function updateDatabasePage(
     pageId,
     buildDatabasePageProperties(
       databaseState.propertyNames,
-      repository,
+      repo,
       context.docsFolder,
       documentPath,
       pageTitle,
@@ -306,7 +307,7 @@ async function updateDatabasePage(
 async function createDatabasePage(
   context: RuntimeContext,
   databaseState: DatabaseSyncState,
-  repository: string,
+  repo: string,
   documentEntry: MarkdownDocument,
   pageTitle: string,
   knownPageUrls: Map<string, string>,
@@ -318,7 +319,7 @@ async function createDatabasePage(
     databaseState.dataSourceId,
     buildDatabasePageProperties(
       databaseState.propertyNames,
-      repository,
+      repo,
       context.docsFolder,
       documentPath,
       pageTitle,
@@ -350,7 +351,7 @@ async function createDatabasePage(
     pageId,
     buildDatabasePageProperties(
       databaseState.propertyNames,
-      repository,
+      repo,
       context.docsFolder,
       documentPath,
       pageTitle,
@@ -378,7 +379,7 @@ async function syncPageMode(
   const documents = await loadDocuments(context, syncState.entries);
   const knownPageUrls = buildKnownPageUrls(documents);
   const syncedPages: SyncedPage[] = [];
-  let syncStateDirty = false;
+  let isSyncStateDirty = false;
 
   for (const documentEntry of documents) {
     try {
@@ -392,13 +393,13 @@ async function syncPageMode(
       if (result.syncedPage) {
         syncedPages.push(result.syncedPage);
       }
-      syncStateDirty = syncStateDirty || result.syncStateDirty;
+      isSyncStateDirty ||= result.syncStateDirty;
     } catch (error) {
       core.warning(`Failed to sync ${documentEntry.relPath}: ${describeError(error)}`);
     }
   }
 
-  if (pageBlockId && pageBlockParentId && syncedPages.length) {
+  if (pageBlockId && pageBlockParentId && syncedPages.length > 0) {
     await appendPageLinksAfterAnchor(
       context.notion,
       pageBlockParentId,
@@ -413,9 +414,9 @@ async function syncPageMode(
     syncState.entries,
     getCurrentDocumentPaths(documents),
   );
-  syncStateDirty = syncStateDirty || removedStaleEntries;
+  isSyncStateDirty ||= removedStaleEntries;
 
-  if (syncStateDirty) {
+  if (isSyncStateDirty) {
     await writeSyncState(context.notion, syncState.pageId, syncState.entries);
   } else {
     core.info("Sync state unchanged.");
@@ -438,7 +439,7 @@ async function syncDocumentToPage(
   let pageId = documentEntry.notionPageId;
   let pageUrl = documentEntry.notionUrl;
   const existingSyncStateEntry = syncState.entries.get(documentPath);
-  let syncStateDirty = false;
+  let isSyncStateDirty = false;
 
   const requiresForcedSync =
     !existingSyncStateEntry?.sourceHash || existingSyncStateEntry.title !== pageTitle;
@@ -467,7 +468,7 @@ async function syncDocumentToPage(
       existingSyncStateEntry.title === pageTitle
     ) {
       documentLog.info("Skipping sync: source hash unchanged.");
-      pageUrl = pageUrl ?? notionPageUrl(pageId);
+      pageUrl ??= notionPageUrl(pageId);
     } else {
       const decision = await getSyncDecision(
         context.notion,
@@ -478,12 +479,12 @@ async function syncDocumentToPage(
         documentLog,
       );
 
-      if (decision.archivedOrMissing) {
+      if (!requiresForcedSync && decision.skipSync) {
+        documentLog.info("Skipping sync: Notion is up to date.");
+        pageUrl ??= notionPageUrl(pageId);
+      } else if (decision.archivedOrMissing) {
         documentLog.warn(`Notion page missing or archived, recreating: ${pageTitle}`);
         pageId = undefined;
-      } else if (decision.skipSync && !requiresForcedSync) {
-        documentLog.info("Skipping sync: Notion is up to date.");
-        pageUrl = pageUrl ?? notionPageUrl(pageId);
       } else {
         try {
           const blocks = await buildBlocksForDocument(
@@ -522,7 +523,7 @@ async function syncDocumentToPage(
       pageId,
       title: pageTitle,
     });
-    syncStateDirty = true;
+    isSyncStateDirty = true;
     await appendSyncStateRecord(context.notion, syncState.pageId, documentPath, {
       pageId,
       title: pageTitle,
@@ -541,7 +542,7 @@ async function syncDocumentToPage(
   }
 
   if (!pageId || !pageUrl) {
-    return { syncStateDirty, syncedPage: null };
+    return { syncStateDirty: isSyncStateDirty, syncedPage: null };
   }
 
   const normalizedPageId = normalizeNotionId(pageId);
@@ -556,11 +557,14 @@ async function syncDocumentToPage(
       sourceHash: documentEntry.sourceHash,
       title: pageTitle,
     });
-    syncStateDirty = true;
+    isSyncStateDirty = true;
   }
 
   knownPageUrls.set(documentEntry.absPath, pageUrl);
-  return { syncStateDirty, syncedPage: { pageId: normalizedPageId, title: pageTitle } };
+  return {
+    syncStateDirty: isSyncStateDirty,
+    syncedPage: { pageId: normalizedPageId, title: pageTitle },
+  };
 }
 
 async function loadDocuments(
@@ -571,7 +575,7 @@ async function loadDocuments(
     context.docsFolderPath,
     context.privateMarkdownPrefix,
   );
-  if (!markdownFiles.length) {
+  if (markdownFiles.length === 0) {
     core.warning(`No markdown files found in ${context.docsFolderPath}.`);
   }
   return loadMarkdownDocuments(markdownFiles, context.docsFolderPath, syncStateEntries);
@@ -622,22 +626,22 @@ async function removeStaleSyncStateEntries(
   syncStateEntries: Map<string, SyncStateEntry>,
   currentDocumentPaths: Set<string>,
 ): Promise<boolean> {
-  const staleEntries = Array.from(syncStateEntries.entries()).filter(
+  const staleEntries = [...syncStateEntries].filter(
     ([documentPath]) => !currentDocumentPaths.has(documentPath),
   );
-  if (!staleEntries.length) {
+  if (staleEntries.length === 0) {
     return false;
   }
 
   const activePageIds = new Set<string>();
-  for (const [documentPath, syncStateEntry] of syncStateEntries.entries()) {
+  for (const [documentPath, syncStateEntry] of syncStateEntries) {
     if (!currentDocumentPaths.has(documentPath)) {
       continue;
     }
     activePageIds.add(normalizeNotionId(syncStateEntry.pageId));
   }
 
-  let removedEntries = false;
+  let isRemovedEntries = false;
   for (const [stalePath, staleEntry] of staleEntries) {
     const staleLog = createLogContext(stalePath);
     const normalizedPageId = normalizeNotionId(staleEntry.pageId);
@@ -652,10 +656,10 @@ async function removeStaleSyncStateEntries(
       await archivePageIfPresent(notion, normalizedPageId, staleLog);
     }
     syncStateEntries.delete(stalePath);
-    removedEntries = true;
+    isRemovedEntries = true;
   }
 
-  return removedEntries;
+  return isRemovedEntries;
 }
 
-run();
+await run();

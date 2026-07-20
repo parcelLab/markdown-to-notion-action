@@ -150,7 +150,7 @@ export async function notionRequest<T>(operation: () => Promise<T>, label: strin
       return await operation();
     } catch (error) {
       lastError = error;
-      if (!isRateLimitError(error) || attempt === maxAttempts) {
+      if (attempt === maxAttempts || !isRateLimitError(error)) {
         throw error;
       }
 
@@ -189,7 +189,7 @@ function getRetryDelayMs(error: unknown, attempt: number): number {
   }
 
   const baseDelayMs = 500;
-  return Math.min(baseDelayMs * 2 ** (attempt - 1), 8_000);
+  return Math.min(baseDelayMs * 2 ** (attempt - 1), 8000);
 }
 
 function sleep(ms: number): Promise<void> {
