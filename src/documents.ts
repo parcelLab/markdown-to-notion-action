@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import { Client } from "@notionhq/client";
 import { createHash } from "node:crypto";
-import * as frontMatter from "front-matter";
+import { load as loadYaml } from "js-yaml";
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import { markdownToNotionBlocks, extractTitle } from "./markdown-to-notion.js";
@@ -11,12 +11,6 @@ import { isInsidePath, resolveChildPath, resolveFromDirectory } from "./path-uti
 import type { LogContext } from "./logging.js";
 import type { NotionBlock } from "./notion-types.js";
 import type { MarkdownDocument, SyncStateEntry } from "./sync-types.js";
-
-type FrontMatterResult<T> = { attributes: T; body: string };
-type FrontMatterParser = <T>(
-  file: string,
-  options?: { allowUnsafe?: boolean },
-) => FrontMatterResult<T>;
 
 export async function ensureDirectoryExists(dirPath: string): Promise<void> {
   const stats = await fs.stat(dirPath);
@@ -69,11 +63,9 @@ export async function loadMarkdownDocuments(
   const documents: MarkdownDocument[] = [];
   for (const filePath of markdownFiles) {
     const markdownContent = await fs.readFile(filePath, "utf8");
-    const parsedFrontMatter = (frontMatter.default as unknown as FrontMatterParser)<
-      Record<string, unknown>
-    >(markdownContent);
-    const frontMatterAttributes = parsedFrontMatter.attributes || {};
-    const markdownBody = parsedFrontMatter.body || "";
+    const parsedFrontMatter = parseFrontMatter(markdownContent);
+    const frontMatterAttributes = parsedFrontMatter.attributes;
+    const markdownBody = parsedFrontMatter.body;
 
     const relPath = normalizeDocumentPath(path.relative(docsRoot, filePath));
     let notionPageId: string | undefined;
@@ -207,4 +199,28 @@ function buildGitHubRawUrl(repoRelativePath: string): string | null {
 
 function hashMarkdownBody(markdownBody: string): string {
   return createHash("sha256").update(markdownBody, "utf8").digest("hex");
+}
+
+function parseFrontMatter(markdownContent: string): {
+  attributes: Record<string, unknown>;
+  body: string;
+} {
+  const lines = markdownContent.split(/\r?\n/);
+  if (lines[0] !== "---") {
+    return { attributes: {}, body: markdownContent };
+  }
+
+  const endIndex = lines.indexOf("---", 1);
+  if (endIndex === -1) {
+    return { attributes: {}, body: markdownContent };
+  }
+
+  const yamlContent = lines.slice(1, endIndex).join("\n");
+  const parsedYaml = loadYaml(yamlContent);
+  const attributes = isRecord(parsedYaml) ? parsedYaml : {};
+  return { attributes, body: lines.slice(endIndex + 1).join("\n") };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
