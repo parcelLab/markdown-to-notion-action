@@ -262,12 +262,12 @@ async function ensureTableViewColumnVisibility(
       updatedViews += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logContext.warn(`Unable to hide internal sync columns for Notion view ${viewId}: ${message}`);
+      logContext.warn(`Unable to update column visibility for Notion view ${viewId}: ${message}`);
     }
   }
 
   if (updatedViews > 0) {
-    logContext.info(`Updated ${updatedViews} Notion table view(s) to hide internal sync columns.`);
+    logContext.info(`Updated column visibility in ${updatedViews} Notion table view(s).`);
   }
 }
 
@@ -275,11 +275,8 @@ function getHiddenColumnPropertyIds(
   properties: DataSourceProperties,
   propertyNames: DatabasePropertyNames,
 ): Set<string> {
-  return new Set(
-    [propertyNames.sourceHash, propertyNames.repository, propertyNames.docsFolder]
-      .map((propertyName) => getDataSourcePropertyId(properties, propertyName))
-      .filter((propertyId): propertyId is string => Boolean(propertyId)),
-  );
+  const sourceHashPropertyId = getDataSourcePropertyId(properties, propertyNames.sourceHash);
+  return new Set(sourceHashPropertyId ? [sourceHashPropertyId] : []);
 }
 
 function getDataSourcePropertyId(

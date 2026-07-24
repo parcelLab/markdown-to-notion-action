@@ -9,6 +9,7 @@ This action:
 - Archives stale Notion pages when their Markdown file no longer exists.
 - Optionally supports the previous parent-page mode with `page_id` or `page_block_id`.
 - Skips private Markdown files by file-name prefix, `_` by default.
+- Supports glob exclusions relative to the configured docs folder.
 - Validates links to avoid Notion "Invalid URL" errors.
 
 ## Quick Start (Beginner)
@@ -61,6 +62,10 @@ jobs:
           docs_folder: docs
           # Optional: skip markdown files whose file name starts with this prefix (default: _)
           private_markdown_prefix: "_"
+          # Optional: exclude paths relative to docs_folder
+          exclude_globs: |
+            drafts/**
+            **/*.draft.md
           # Optional: separator used between folder names and title (default: →)
           title_prefix_separator: "→"
 ```
@@ -75,6 +80,7 @@ jobs:
 | `page_block_id`           | No       | Legacy anchor block ID/URL. The action appends shortcut (`link_to_page`) blocks after this block. Ignored when `database_id` is provided. |
 | `page_id`                 | No       | Legacy parent page ID/URL for new pages. Pages are created at the end of the parent page.                                                 |
 | `private_markdown_prefix` | No       | Markdown file-name prefix to skip. Default: `_`. Set to `"null"`, `"none"`, or `"false"` to disable.                                      |
+| `exclude_globs`           | No       | Newline-separated glob patterns to exclude, relative to `docs_folder`.                                                                    |
 | `title_prefix_separator`  | No       | Separator used between folder names and the title. Default: `→`.                                                                          |
 | `github_token`            | No       | Used to read private GitHub repository files for image uploads and file commit timestamps.                                                |
 
@@ -97,7 +103,7 @@ The action uses Notion as the durable source of truth. In database mode, each Ma
 
 `Docs Folder` stores the configured Markdown root, for example `docs` or `my-custom/docs`. `Path` stores the full Markdown path relative to the repository root, for example `docs/api/auth.md`.
 
-The action hides internal sync columns (`Repository`, `Docs Folder`, and `Source Hash`) in table views when the Notion API allows updating the database view configuration.
+The action hides `Source Hash` in table views when the Notion API allows updating the database view configuration. It leaves visibility for all other columns, including user-added columns, unchanged.
 
 On each run, the action queries the database once with pagination, builds a local path-to-page map, and syncs only pages whose source hash changed. When a new database item is created, the row is created before the Markdown blocks are uploaded, so later workflow runs can find it even if the previous run failed after item creation.
 
@@ -122,6 +128,18 @@ To disable this behavior:
 with:
   private_markdown_prefix: "null"
 ```
+
+Glob exclusions are relative to `docs_folder` and apply in both database and parent-page modes:
+
+```yaml
+with:
+  exclude_globs: |
+    drafts/**
+    generated/**/*
+    **/*.draft.md
+```
+
+Excluded paths are treated as absent, so previously synced database items for those paths are archived.
 
 ### 3) Title Selection
 

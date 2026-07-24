@@ -22,26 +22,37 @@ export async function ensureDirectoryExists(dirPath: string): Promise<void> {
 export async function collectMarkdownFiles(
   dirPath: string,
   privateMarkdownPrefix: string | null,
+  excludeGlobs: string[] = [],
 ): Promise<string[]> {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  const files: string[] = [];
-  for (const entry of entries) {
-    const fullPath = resolveChildPath(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === "node_modules" || entry.name.startsWith(".")) {
+  async function collectDirectory(currentPath: string): Promise<string[]> {
+    const entries = await fs.readdir(currentPath, { withFileTypes: true });
+    const files: string[] = [];
+    for (const entry of entries) {
+      const fullPath = resolveChildPath(currentPath, entry.name);
+      const relativePath = normalizeDocumentPath(path.relative(dirPath, fullPath));
+      const matchPath = entry.isDirectory() ? `${relativePath}/` : relativePath;
+      if (excludeGlobs.some((pattern) => path.matchesGlob(matchPath, pattern))) {
         continue;
       }
-      files.push(...(await collectMarkdownFiles(fullPath, privateMarkdownPrefix)));
-      continue;
-    }
-    if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
-      if (isPrivateMarkdownFile(entry.name, privateMarkdownPrefix)) {
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".")) {
+          continue;
+        }
+        files.push(...(await collectDirectory(fullPath)));
         continue;
       }
-      files.push(fullPath);
+      if (
+        entry.isFile() &&
+        entry.name.toLowerCase().endsWith(".md") &&
+        !isPrivateMarkdownFile(entry.name, privateMarkdownPrefix)
+      ) {
+        files.push(fullPath);
+      }
     }
+    return files;
   }
-  return files;
+
+  return collectDirectory(dirPath);
 }
 
 export function normalizeDocumentPath(relPath: string): string {

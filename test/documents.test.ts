@@ -15,15 +15,22 @@ import type { MarkdownDocument, SyncStateEntry } from "../src/sync-types.js";
 const TEST_ROOT = path.join(process.cwd(), "tmp", "test-documents");
 const NOTION_PAGE_ID = "387aa331d0584c82ba09feaa972a7550";
 
-test("collectMarkdownFiles skips private markdown files, hidden folders, and node_modules", async () => {
+test("collectMarkdownFiles skips private files, ignored folders, and excluded globs", async () => {
   await resetTestRoot();
   await writeFixture("docs/public.md", "# Public");
   await writeFixture("docs/_private.md", "# Private");
   await writeFixture("docs/.hidden/hidden.md", "# Hidden");
   await writeFixture("docs/node_modules/package/readme.md", "# Dependency");
   await writeFixture("docs/nested/guide.MD", "# Nested");
+  await writeFixture("docs/drafts/guide.md", "# Draft");
+  await writeFixture("docs/nested/internal/secret.md", "# Secret");
+  await writeFixture("docs/nested/old.draft.md", "# Old draft");
 
-  const files = await collectMarkdownFiles(path.join(TEST_ROOT, "docs"), "_");
+  const files = await collectMarkdownFiles(path.join(TEST_ROOT, "docs"), "_", [
+    "drafts/**",
+    "**/internal/**",
+    "**/*.draft.md",
+  ]);
   const relativeFiles = files
     .map((file) => normalizeDocumentPath(path.relative(TEST_ROOT, file)))
     .sort((firstPath, secondPath) => firstPath.localeCompare(secondPath));
