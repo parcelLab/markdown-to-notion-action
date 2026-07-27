@@ -60,7 +60,7 @@ test("buildDatabasePageProperties clears Source Hash when content was not synced
   assert.deepEqual(properties["Source Hash"], { rich_text: [] });
 });
 
-test("loadDatabaseSyncState does not fail when a Notion table view rejects hidden column updates", async () => {
+test("loadDatabaseSyncState hides Source Hash without changing other column visibility", async () => {
   const viewUpdates: Array<{ configuration: { properties?: Array<{ property_id: string }> } }> = [];
   const warnings: string[] = [];
   const notion = createDatabaseStateNotionStub(viewUpdates);
@@ -77,10 +77,13 @@ test("loadDatabaseSyncState does not fail when a Notion table view rejects hidde
   assert.equal(viewUpdates.length, 1);
   assert.deepEqual(viewUpdates[0]?.configuration.properties, [
     { property_id: "repo-id", visible: false },
+    { property_id: "docs-id", visible: true },
+    { property_id: "source-id", visible: false },
+    { property_id: "order-id", visible: true },
     { property_id: "path-id", visible: true },
   ]);
   assert.equal(
-    warnings.some((message) => message.includes("Unable to hide internal sync columns")),
+    warnings.some((message) => message.includes("Unable to update column visibility")),
     true,
   );
 });
@@ -105,6 +108,7 @@ function createDatabaseStateNotionStub(
           Path: { id: "path-id", type: "rich_text" },
           Repository: { id: "repo-id", type: "rich_text" },
           "Source Hash": { id: "source-id", type: "rich_text" },
+          Order: { id: "order-id", type: "number" },
         },
       }),
       query: async () => ({ has_more: false, next_cursor: null, results: [] }),
@@ -115,7 +119,10 @@ function createDatabaseStateNotionStub(
         configuration: {
           type: "table",
           properties: [
-            { property_id: "repo-id", visible: true },
+            { property_id: "repo-id", visible: false },
+            { property_id: "docs-id", visible: true },
+            { property_id: "source-id", visible: true },
+            { property_id: "order-id", visible: true },
             { property_id: "path-id", visible: true },
           ],
         },

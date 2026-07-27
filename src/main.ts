@@ -43,6 +43,7 @@ import type { MarkdownDocument, SyncStateEntry, SyncedPage } from "./sync-types.
 type RuntimeContext = {
   docsFolder: string;
   docsFolderPath: string;
+  excludeGlobs: string[];
   githubToken: string | null;
   notion: Client;
   privateMarkdownPrefix: string | null;
@@ -70,6 +71,9 @@ async function run(): Promise<void> {
     const privateMarkdownPrefixInput = readInput("private_markdown_prefix", [
       "PRIVATE_MARKDOWN_PREFIX",
     ]);
+    const excludeGlobs = readInput("exclude_globs", ["EXCLUDE_GLOBS"])
+      .split(/\r?\n/)
+      .filter(Boolean);
     const titlePrefixSeparatorInput = readInput("title_prefix_separator", [
       "TITLE_PREFIX_SEPARATOR",
     ]);
@@ -94,10 +98,14 @@ async function run(): Promise<void> {
     } else {
       core.info("Private markdown file prefix disabled; all markdown files can be synced.");
     }
+    if (excludeGlobs.length > 0) {
+      core.info(`Excluding markdown paths matching: ${excludeGlobs.join(", ")}`);
+    }
 
     const context: RuntimeContext = {
       docsFolder: docsFolderForSync,
       docsFolderPath,
+      excludeGlobs,
       githubToken,
       notion,
       privateMarkdownPrefix,
@@ -574,6 +582,7 @@ async function loadDocuments(
   const markdownFiles = await collectMarkdownFiles(
     context.docsFolderPath,
     context.privateMarkdownPrefix,
+    context.excludeGlobs,
   );
   if (markdownFiles.length === 0) {
     core.warning(`No markdown files found in ${context.docsFolderPath}.`);
