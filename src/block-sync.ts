@@ -13,7 +13,6 @@ import {
   notionRequest,
   toDashedId,
 } from "./notion-api.js";
-import { getBlockChildren } from "./notion-block-utils.js";
 import type { LogContext } from "./logging.js";
 import type { NotionBlock } from "./notion-types.js";
 import type { SyncedPage } from "./sync-types.js";
@@ -338,6 +337,15 @@ function getBlockType(block: PartialBlockObjectResponse): string | null {
   }
   const candidate = (block as { type?: unknown }).type;
   return typeof candidate === "string" ? candidate : null;
+}
+
+function getBlockChildren(block: NotionBlock): NotionBlock[] {
+  const content = (block as Record<string, unknown>)[block.type];
+  if (!content || typeof content !== "object") {
+    return [];
+  }
+  const children = (content as { children?: unknown }).children;
+  return Array.isArray(children) ? (children as NotionBlock[]) : [];
 }
 
 function hasExistingBlockChildren(block: PartialBlockObjectResponse): boolean {
