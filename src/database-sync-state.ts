@@ -77,6 +77,7 @@ export async function loadDatabaseSyncState(
   notion: Client,
   dataSourceOrDatabaseId: string,
   repo: string,
+  docsFolder: string,
   logContext: LogContext,
 ): Promise<DatabaseSyncState> {
   const { databaseId, dataSourceId } = await resolveDatabaseTarget(
@@ -93,13 +94,25 @@ export async function loadDatabaseSyncState(
     propertyNames,
     logContext,
   );
-  const pages = await queryAllDataSourcePages(notion, dataSourceId);
+  const pages = await queryAllDataSourcePages(
+    notion,
+    dataSourceId,
+    propertyNames,
+    repo,
+    docsFolder,
+  );
   const entries = new Map<string, SyncStateEntry>();
-  const pageIdsByTitle = collectUniquePageIdsByTitle(pages, propertyNames, repo, logContext);
+  const pageIdsByTitle = collectUniquePageIdsByTitle(
+    pages,
+    propertyNames,
+    repo,
+    docsFolder,
+    logContext,
+  );
 
   for (const page of pages) {
     const pageInfo = readManagedPageInfo(page, propertyNames);
-    if (!pageInfo || pageInfo.repository !== repo) {
+    if (!pageInfo || pageInfo.repository !== repo || pageInfo.docsFolder !== docsFolder) {
       continue;
     }
 
@@ -418,6 +431,9 @@ function findPropertyNameByType(properties: DataSourceProperties, type: string):
 async function queryAllDataSourcePages(
   notion: Client,
   dataSourceId: string,
+  propertyNames: DatabasePropertyNames,
+  repo: string,
+  docsFolder: string,
 ): Promise<DataSourceQueryResult[]> {
   const results: DataSourceQueryResult[] = [];
   let cursor: string | undefined;
@@ -427,6 +443,7 @@ async function queryAllDataSourcePages(
       () =>
         notion.dataSources.query({
           data_source_id: toDashedId(dataSourceId),
+          filter: buildRepositoryScopeFilter(propertyNames, repo, docsFolder),
           page_size: 100,
           result_type: "page",
           start_cursor: cursor,
@@ -440,10 +457,30 @@ async function queryAllDataSourcePages(
   return results;
 }
 
+function buildRepositoryScopeFilter(
+  propertyNames: DatabasePropertyNames,
+  repo: string,
+  docsFolder: string,
+): NonNullable<Parameters<Client["dataSources"]["query"]>[0]["filter"]> {
+  return {
+    and: [
+      {
+        property: propertyNames.repository,
+        rich_text: { equals: repo },
+      },
+      {
+        property: propertyNames.docsFolder,
+        rich_text: { equals: docsFolder },
+      },
+    ],
+  };
+}
+
 function collectUniquePageIdsByTitle(
   pages: DataSourceQueryResult[],
   propertyNames: DatabasePropertyNames,
   repo: string,
+  docsFolder: string,
   logContext: LogContext,
 ): Map<string, string> {
   const pageIdsByTitle = new Map<string, string>();
@@ -457,7 +494,8 @@ function collectUniquePageIdsByTitle(
     }
 
     const pageRepo = getRichTextProperty(page, propertyNames.repository);
-    if (pageRepo && pageRepo !== repo) {
+    const pageDocsFolder = getRichTextProperty(page, propertyNames.docsFolder);
+    if (pageRepo !== repo || pageDocsFolder !== docsFolder) {
       continue;
     }
 
@@ -484,19 +522,22 @@ function readManagedPageInfo(
   propertyNames: DatabasePropertyNames,
 ): {
   pageId: string;
+  docsFolder: string;
   path: string;
   repository: string;
   sourceHash?: string;
   title?: string;
 } | null {
   const pageId = getPageId(page);
+  const docsFolder = getRichTextProperty(page, propertyNames.docsFolder);
   const path = getRichTextProperty(page, propertyNames.path);
   const repo = getRichTextProperty(page, propertyNames.repository);
-  if (!pageId || !path || !repo) {
+  if (!pageId || !docsFolder || !path || !repo) {
     return null;
   }
 
   return {
+    docsFolder,
     pageId,
     path,
     repository: repo,

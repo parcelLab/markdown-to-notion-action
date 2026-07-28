@@ -26,15 +26,15 @@ Flow:
 2. `loadDatabaseSyncState()` in `src/database-sync-state.ts` resolves the provided Notion database ID to its first data source.
 3. Required database properties are created if missing: `Name`, `Repository`, `Docs Folder`, `Path`, `Source Hash`, and `Last Synced At`.
 4. Table views are updated to hide `Source Hash`; visibility for all other columns is left unchanged.
-5. All database pages are queried once with pagination and converted into an in-memory path-to-page map scoped by `Repository`.
+5. Database pages are queried once with pagination using a Notion filter scoped by `Repository` and `Docs Folder`, then converted into an in-memory path-to-page map.
 6. Markdown files are collected from `docs_folder`, excluding private Markdown files whose file name starts with `private_markdown_prefix` (`_` by default) and paths matching `exclude_globs`.
 7. Each document is skipped when its `Source Hash` matches the current Markdown body hash and the title still matches.
 8. New database items are created before page block upload starts, so later workflow runs can find the item even if the previous run fails mid-upload.
-9. Stale database records whose `Path` no longer exists in Git are archived in Notion.
+9. Stale database records in the current `Repository` and `Docs Folder` scope whose `Path` no longer exists in Git are archived in Notion.
 
 Critical fields:
 
-- `Repository`: `GITHUB_REPOSITORY`, used to avoid mixing rows from multiple repositories in one database.
+- `Repository`: `GITHUB_REPOSITORY`, used with `Docs Folder` to avoid mixing rows from multiple sync scopes in one database.
 - `Docs Folder`: configured docs root relative to repo root, e.g. `docs` or `my-custom/docs`.
 - `Path`: full Markdown path relative to repo root, e.g. `docs/api/auth.md`.
 - `Source Hash`: SHA-256 of the Markdown body after frontmatter removal. This is the fast skip signal.
@@ -79,7 +79,7 @@ Do not reintroduce `_notion_links.md`; repository-stored mapping files caused du
 
 Design for 500 Markdown files:
 
-- Query Notion database pages once per run with pagination, not once per Markdown file.
+- Query Notion database pages once per run with a `Repository` + `Docs Folder` filter and pagination, not once per Markdown file.
 - Use `Source Hash` as the primary skip signal; unchanged files should not require GitHub per-file commit lookups.
 - Use GitHub commit-time checks only when the hash is missing or changed and legacy page update freshness must be determined.
 - Keep Notion write concurrency conservative. Notion rate limits are low; `notionRequest()` retries rate-limited calls, and block deletion already uses a small concurrency limit.

@@ -101,13 +101,13 @@ The action uses Notion as the durable source of truth. In database mode, each Ma
 - `Source Hash`
 - `Last Synced At`
 
-`Docs Folder` stores the configured Markdown root, for example `docs` or `my-custom/docs`. `Path` stores the full Markdown path relative to the repository root, for example `docs/api/auth.md`.
+`Repository` stores the current `GITHUB_REPOSITORY`, for example `owner/repo`. `Docs Folder` stores the configured Markdown root, for example `docs` or `my-custom/docs`. `Path` stores the full Markdown path relative to the repository root, for example `docs/api/auth.md`.
 
 The action hides `Source Hash` in table views when the Notion API allows updating the database view configuration. It leaves visibility for all other columns, including user-added columns, unchanged.
 
-On each run, the action queries the database once with pagination, builds a local path-to-page map, and syncs only pages whose source hash changed. When a new database item is created, the row is created before the Markdown blocks are uploaded, so later workflow runs can find it even if the previous run failed after item creation.
+On each run, the action queries only database rows whose `Repository` and `Docs Folder` match the current workflow, builds a local path-to-page map, and syncs only pages whose source hash changed. A single Notion database can therefore store docs from multiple repositories or multiple docs folders without one sync run archiving another repo's pages. When a new database item is created, the row is created before the Markdown blocks are uploaded, so later workflow runs can find it even if the previous run failed after item creation.
 
-If a database row does not exist yet, the action first tries to match an existing database item by the generated Notion page title. Matching only happens for unique titles; duplicate titles are ignored to avoid attaching a Markdown file to the wrong page.
+If a database row does not exist yet, the action first tries to match an existing database item by the generated Notion page title inside the same `Repository` and `Docs Folder` scope. Matching only happens for unique titles; duplicate titles are ignored to avoid attaching a Markdown file to the wrong page.
 
 Legacy parent-page mode still stores sync state inside a child page named `_Markdown to Notion Sync Data (do not edit)`.
 
@@ -172,7 +172,7 @@ Supported conversions include:
 
 ### 5) Deleted or Renamed Markdown Files
 
-If a path exists in the Notion database properties but the Markdown file no longer exists in `docs_folder`, the action treats that path as stale.
+If a path exists in the Notion database properties for the current `Repository` and `Docs Folder`, but the Markdown file no longer exists in `docs_folder`, the action treats that path as stale.
 
 - The stale Notion database item/page is archived.
 - In database mode, the archived database item/page remains in Notion trash/history according to Notion behavior.

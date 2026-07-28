@@ -130,6 +130,7 @@ async function syncDatabaseMode(context: RuntimeContext, databaseInput: string):
     context.notion,
     databaseInput,
     repo,
+    context.docsFolder,
     createLogContext("database"),
   );
   const documents = await loadDocuments(context, new Map());
