@@ -58,14 +58,12 @@ jobs:
           # Creates one database item per Markdown file. In Notion, each item is also a page.
           database_id: ${{ secrets.NOTION_DATABASE_ID }}
 
-          # Optional: folder containing markdown files (default: docs)
-          docs_folder: docs
           # Optional: skip markdown files whose file name starts with this prefix (default: _)
           private_markdown_prefix: "_"
-          # Optional: exclude paths relative to docs_folder
+          # Optional: exclude paths relative to the repository root
           exclude_globs: |
-            drafts/**
-            **/*.draft.md
+            docs/drafts/**
+            docs/**/*.draft.md
           # Optional: separator used between folder names and title (default: →)
           title_prefix_separator: "→"
 ```
@@ -80,7 +78,7 @@ jobs:
 | `page_block_id`           | No       | Legacy anchor block ID/URL. The action appends shortcut (`link_to_page`) blocks after this block. Ignored when `database_id` is provided. |
 | `page_id`                 | No       | Legacy parent page ID/URL for new pages. Pages are created at the end of the parent page.                                                 |
 | `private_markdown_prefix` | No       | Markdown file-name prefix to skip. Default: `_`. Set to `"null"`, `"none"`, or `"false"` to disable.                                      |
-| `exclude_globs`           | No       | Newline-separated glob patterns to exclude, relative to `docs_folder`.                                                                    |
+| `exclude_globs`           | No       | Newline-separated glob patterns to exclude, relative to the repository root.                                                              |
 | `title_prefix_separator`  | No       | Separator used between folder names and the title. Default: `→`.                                                                          |
 | `github_token`            | No       | Used to read private GitHub repository files for image uploads and file commit timestamps.                                                |
 
@@ -129,14 +127,14 @@ with:
   private_markdown_prefix: "null"
 ```
 
-Glob exclusions are relative to `docs_folder` and apply in both database and parent-page modes:
+Glob exclusions are relative to the repository root and apply in both database and parent-page modes. Patterns relative to `docs_folder` remain supported for compatibility:
 
 ```yaml
 with:
   exclude_globs: |
-    drafts/**
-    generated/**/*
-    **/*.draft.md
+    docs/drafts/**
+    docs/generated/**/*
+    docs/**/*.draft.md
 ```
 
 Excluded paths are treated as absent, so previously synced database items for those paths are archived.

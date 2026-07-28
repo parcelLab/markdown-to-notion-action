@@ -23,15 +23,22 @@ export async function collectMarkdownFiles(
   dirPath: string,
   privateMarkdownPrefix: string | null,
   excludeGlobs: string[] = [],
+  repositoryRoot: string = dirPath,
 ): Promise<string[]> {
   async function collectDirectory(currentPath: string): Promise<string[]> {
     const entries = await fs.readdir(currentPath, { withFileTypes: true });
     const files: string[] = [];
     for (const entry of entries) {
       const fullPath = resolveChildPath(currentPath, entry.name);
-      const relativePath = normalizeDocumentPath(path.relative(dirPath, fullPath));
-      const matchPath = entry.isDirectory() ? `${relativePath}/` : relativePath;
-      if (excludeGlobs.some((pattern) => path.matchesGlob(matchPath, pattern))) {
+      const relativePaths = [dirPath, repositoryRoot].map((rootPath) => {
+        const relativePath = normalizeDocumentPath(path.relative(rootPath, fullPath));
+        return entry.isDirectory() ? `${relativePath}/` : relativePath;
+      });
+      if (
+        excludeGlobs.some((pattern) =>
+          relativePaths.some((relativePath) => path.matchesGlob(relativePath, pattern)),
+        )
+      ) {
         continue;
       }
       if (entry.isDirectory()) {

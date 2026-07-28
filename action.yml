@@ -35,7 +35,7 @@ inputs:
     default: "_"
 
   exclude_globs:
-    description: "Newline-separated glob patterns to exclude, relative to docs_folder"
+    description: "Newline-separated glob patterns to exclude, relative to the repository root"
     required: false
 
   title_prefix_separator:
