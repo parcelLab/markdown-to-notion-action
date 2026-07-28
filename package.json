@@ -20,7 +20,7 @@
     "@actions/core": "^3.0.1",
     "@notionhq/client": "^5.23.2",
     "@tryfabric/martian": "^1.2.4",
-    "js-yaml": "^5.2.1",
+    "js-yaml": "^5.2.2",
     "markdown-it": "^14.3.0",
     "tsx": "^4.23.1"
   },
