@@ -26,11 +26,12 @@ test("collectMarkdownFiles skips private files, ignored folders, and excluded gl
   await writeFixture("docs/nested/internal/secret.md", "# Secret");
   await writeFixture("docs/nested/old.draft.md", "# Old draft");
 
-  const files = await collectMarkdownFiles(path.join(TEST_ROOT, "docs"), "_", [
-    "drafts/**",
-    "**/internal/**",
-    "**/*.draft.md",
-  ]);
+  const files = await collectMarkdownFiles(
+    path.join(TEST_ROOT, "docs"),
+    "_",
+    ["docs/drafts/**", "nested/internal/**", "**/*.draft.md"],
+    TEST_ROOT,
+  );
   const relativeFiles = files
     .map((file) => normalizeDocumentPath(path.relative(TEST_ROOT, file)))
     .sort((firstPath, secondPath) => firstPath.localeCompare(secondPath));

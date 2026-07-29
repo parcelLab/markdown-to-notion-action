@@ -58,14 +58,12 @@ jobs:
           # Creates one database item per Markdown file. In Notion, each item is also a page.
           database_id: ${{ secrets.NOTION_DATABASE_ID }}
 
-          # Optional: folder containing markdown files (default: docs)
-          docs_folder: docs
           # Optional: skip markdown files whose file name starts with this prefix (default: _)
           private_markdown_prefix: "_"
-          # Optional: exclude paths relative to docs_folder
+          # Optional: exclude paths relative to the repository root
           exclude_globs: |
-            drafts/**
-            **/*.draft.md
+            docs/drafts/**
+            docs/**/*.draft.md
           # Optional: separator used between folder names and title (default: →)
           title_prefix_separator: "→"
 ```
@@ -80,7 +78,7 @@ jobs:
 | `page_block_id`           | No       | Legacy anchor block ID/URL. The action appends shortcut (`link_to_page`) blocks after this block. Ignored when `database_id` is provided. |
 | `page_id`                 | No       | Legacy parent page ID/URL for new pages. Pages are created at the end of the parent page.                                                 |
 | `private_markdown_prefix` | No       | Markdown file-name prefix to skip. Default: `_`. Set to `"null"`, `"none"`, or `"false"` to disable.                                      |
-| `exclude_globs`           | No       | Newline-separated glob patterns to exclude, relative to `docs_folder`.                                                                    |
+| `exclude_globs`           | No       | Newline-separated glob patterns to exclude, relative to the repository root.                                                              |
 | `title_prefix_separator`  | No       | Separator used between folder names and the title. Default: `→`.                                                                          |
 | `github_token`            | No       | Used to read private GitHub repository files for image uploads and file commit timestamps.                                                |
 
@@ -101,13 +99,13 @@ The action uses Notion as the durable source of truth. In database mode, each Ma
 - `Source Hash`
 - `Last Synced At`
 
-`Docs Folder` stores the configured Markdown root, for example `docs` or `my-custom/docs`. `Path` stores the full Markdown path relative to the repository root, for example `docs/api/auth.md`.
+`Repository` stores the current `GITHUB_REPOSITORY`, for example `owner/repo`. `Docs Folder` stores the configured Markdown root, for example `docs` or `my-custom/docs`. `Path` stores the full Markdown path relative to the repository root, for example `docs/api/auth.md`.
 
 The action hides `Source Hash` in table views when the Notion API allows updating the database view configuration. It leaves visibility for all other columns, including user-added columns, unchanged.
 
-On each run, the action queries the database once with pagination, builds a local path-to-page map, and syncs only pages whose source hash changed. When a new database item is created, the row is created before the Markdown blocks are uploaded, so later workflow runs can find it even if the previous run failed after item creation.
+On each run, the action queries only database rows whose `Repository` and `Docs Folder` match the current workflow, builds a local path-to-page map, and syncs only pages whose source hash changed. A single Notion database can therefore store docs from multiple repositories or multiple docs folders without one sync run archiving another repo's pages. When a new database item is created, the row is created before the Markdown blocks are uploaded, so later workflow runs can find it even if the previous run failed after item creation.
 
-If a database row does not exist yet, the action first tries to match an existing database item by the generated Notion page title. Matching only happens for unique titles; duplicate titles are ignored to avoid attaching a Markdown file to the wrong page.
+If a database row does not exist yet, the action first tries to match an existing database item by the generated Notion page title inside the same `Repository` and `Docs Folder` scope. Matching only happens for unique titles; duplicate titles are ignored to avoid attaching a Markdown file to the wrong page.
 
 Legacy parent-page mode still stores sync state inside a child page named `_Markdown to Notion Sync Data (do not edit)`.
 
@@ -129,14 +127,14 @@ with:
   private_markdown_prefix: "null"
 ```
 
-Glob exclusions are relative to `docs_folder` and apply in both database and parent-page modes:
+Glob exclusions are relative to the repository root and apply in both database and parent-page modes. Patterns relative to `docs_folder` remain supported for compatibility:
 
 ```yaml
 with:
   exclude_globs: |
-    drafts/**
-    generated/**/*
-    **/*.draft.md
+    docs/drafts/**
+    docs/generated/**/*
+    docs/**/*.draft.md
 ```
 
 Excluded paths are treated as absent, so previously synced database items for those paths are archived.
@@ -172,7 +170,7 @@ Supported conversions include:
 
 ### 5) Deleted or Renamed Markdown Files
 
-If a path exists in the Notion database properties but the Markdown file no longer exists in `docs_folder`, the action treats that path as stale.
+If a path exists in the Notion database properties for the current `Repository` and `Docs Folder`, but the Markdown file no longer exists in `docs_folder`, the action treats that path as stale.
 
 - The stale Notion database item/page is archived.
 - In database mode, the archived database item/page remains in Notion trash/history according to Notion behavior.
