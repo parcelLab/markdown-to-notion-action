@@ -94,10 +94,10 @@ Design for 500 Markdown files:
 
 ## Release
 
-- Semantic-release is configured for manual draft GitHub releases.
-- Breaking releases use a `BREAKING CHANGE:` footer or `feat!:` commit header.
-- The current major release line uses the floating `v3` tag via `.github/update-v3-tag.sh`.
-- Release workflow checkout uses bounded history for performance; if the last release tag falls outside that depth, semantic-release can mis-detect the previous release.
+- Releases use the shared `parcelLab/ci` release-drafter workflow (`.github/workflows/release.yml` → `parcelLab/ci/.github/workflows/release.yaml@v9`), configured by `.github/release-drafter.yml`.
+- Every push to `main` creates or updates a draft release tagged with the next **patch** version. The version is chosen by a human when publishing: edit the draft, set the tag you actually want (minor/major), publish.
+- `.github/workflows/update-major-version-tag.yml` force-moves the floating major tag (`v3`) to the published release. It listens on `release: published` and on `v*.*.*` tag pushes, and skips prereleases.
+- The `release: published` event is suppressed for releases published by the default `GITHUB_TOKEN`, so releases must be published by a human or a PAT.
 
 ## Gotchas
 
