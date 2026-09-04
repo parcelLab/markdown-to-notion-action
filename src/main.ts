@@ -159,7 +159,7 @@ async function syncDatabaseMode(context: RuntimeContext, databaseInput: string):
   }
 
   const currentDocumentPaths = getCurrentDatabaseDocumentPaths(context, documents);
-  await removeStaleSyncStateEntries(context.notion, databaseState.entries, currentDocumentPaths);
+  await didRemoveStaleSyncStateEntries(context.notion, databaseState.entries, currentDocumentPaths);
 }
 
 async function syncDocumentToDatabase(
@@ -418,7 +418,7 @@ async function syncPageMode(
     );
   }
 
-  const removedStaleEntries = await removeStaleSyncStateEntries(
+  const removedStaleEntries = await didRemoveStaleSyncStateEntries(
     context.notion,
     syncState.entries,
     getCurrentDocumentPaths(documents),
@@ -632,7 +632,7 @@ function getDatabaseDocumentPath(context: RuntimeContext, documentEntry: Markdow
   return normalizeDocumentPath(path.relative(context.workspaceRoot, documentEntry.absPath));
 }
 
-async function removeStaleSyncStateEntries(
+async function didRemoveStaleSyncStateEntries(
   notion: Client,
   syncStateEntries: Map<string, SyncStateEntry>,
   currentDocumentPaths: Set<string>,

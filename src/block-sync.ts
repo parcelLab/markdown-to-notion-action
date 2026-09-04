@@ -303,7 +303,7 @@ async function syncBlockPair(
     }
 
     if (canUpdateBlockType(incoming.type)) {
-      const updated = await updateBlockContent(notion, existingId, incoming, logContext);
+      const updated = await didUpdateBlockContent(notion, existingId, incoming, logContext);
       if (updated) {
         if (hasChildrenToSync) {
           await syncPageBlocks(notion, existingId, incomingChildren, logContext);
@@ -366,7 +366,7 @@ function canUpdateBlockType(type: string): boolean {
   ].includes(type);
 }
 
-async function updateBlockContent(
+async function didUpdateBlockContent(
   notion: Client,
   blockId: string,
   block: NotionBlock,

@@ -240,7 +240,7 @@ function extractStandaloneMarkdownImages(markdown: string): StandaloneMarkdownIm
     }
 
     const source = imageToken.attrGet("src");
-    if (!source) {
+    if (typeof source !== "string" || !source) {
       continue;
     }
 

@@ -23,12 +23,7 @@ type ViewRetrieveResponse = Awaited<ReturnType<Client["views"]["retrieve"]>>;
 type ViewPropertyConfig = {
   card_property_width_mode?: "full_line" | "inline";
   date_format?:
-    | "full"
-    | "short"
-    | "month_day_year"
-    | "day_month_year"
-    | "year_month_day"
-    | "relative";
+    "full" | "short" | "month_day_year" | "day_month_year" | "year_month_day" | "relative";
   property_id: string;
   status_show_as?: "select" | "checkbox";
   time_format?: "12_hour" | "24_hour" | "hidden";
