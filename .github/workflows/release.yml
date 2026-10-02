@@ -1,35 +1,12 @@
-name: Release
-
+name: Prepare the release
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  semantic-release:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 50
-          fetch-tags: true
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
-
-      - name: Update floating v3 tag (non-blocking)
-        continue-on-error: true
-        run: ./.github/update-v3-tag.sh
+  release:
+    uses: parcelLab/ci/.github/workflows/release.yaml@v9
+    secrets:
+      repoAccessToken: ${{ secrets.REPO_ACCESS_TOKEN_OPEN_SOURCE }}
