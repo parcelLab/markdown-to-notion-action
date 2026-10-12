@@ -183,8 +183,9 @@ A rename is treated the same as delete + create because the action cannot safely
 This repository uses Git tags for versions. GitHub does not always show tag labels on the commits list, so use the Tags page to find the latest version:
 
 - GitHub → **Releases → Tags** or **Code → Tags**
-- The manual release workflow attempts to move the floating `v3` tag to the latest `v3.x.x` release.
-- If that step fails or GitHub keeps the wrong ref cached, run `./.github/update-v3-tag.sh` locally as a fallback.
+- Every push to `main` refreshes a **draft** release (next patch version). Edit the draft to pick the real version — creating a new tag on publish — then publish it.
+- Publishing the release moves the floating `v3` tag to that release. Publish as a human or with a PAT: releases published by the default `GITHUB_TOKEN` do not fire the `release: published` event, so `v3` would silently lag behind.
+- If the major tag is ever out of sync, run the **Update major tag** workflow manually with the target tag.
 
 ## Notion ID Tips
 
@@ -215,7 +216,6 @@ To get an inline database ID, open the table view settings and click **Copy link
 - `npm run knip`
 - `npm run precommit`
 - `npm run hooks:install` to enable the local Git pre-commit hook
-- `./.github/update-v3-tag.sh`
 
 ## Troubleshooting
 
