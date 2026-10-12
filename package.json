@@ -38,6 +38,6 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "katex": "0.16.45"
+    "katex": "0.18.10"
   }
 }
