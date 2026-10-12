@@ -251,6 +251,7 @@ If the GitHub API lookup is unavailable, it falls back to local `git log`, which
 - If a Markdown path is renamed or deleted, the old Notion page is archived unless that same page ID is still referenced by another active Markdown file.
 - If a block append fails, the action logs a warning and continues.
 - HTML in Markdown is not preserved.
+- The workflow run's job summary lists every Notion page the run created, updated, or archived, linked to the page in Notion.
 
 ## License
 
