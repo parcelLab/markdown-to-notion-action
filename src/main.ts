@@ -38,6 +38,7 @@ import {
   readInput,
 } from "./action-inputs.js";
 import type { DatabaseSyncState } from "./database-sync-state.js";
+import { recordPageChange, writeSyncSummary } from "./sync-summary.js";
 import type { MarkdownDocument, SyncStateEntry, SyncedPage } from "./sync-types.js";
 
 type RuntimeContext = {
@@ -121,6 +122,12 @@ async function run(): Promise<void> {
     await syncPageMode(context, pageInput, pageBlockInput);
   } catch (error) {
     core.setFailed(describeError(error));
+  } finally {
+    try {
+      await writeSyncSummary();
+    } catch (error) {
+      core.warning(`Failed to write job summary: ${describeError(error)}`);
+    }
   }
 }
 
@@ -226,6 +233,7 @@ async function syncDocumentToDatabase(
           );
           pageUrl = notionPageUrl(pageId);
           documentLog.info(`Updated page: ${pageTitle}`);
+          recordPageChange({ action: "Updated", title: pageTitle, url: pageUrl });
         } catch (error) {
           if (!isNotionArchivedError(error) && !isNotionNotFoundError(error)) {
             throw error;
@@ -338,6 +346,7 @@ async function createDatabasePage(
   const pageId = normalizeNotionId(created.id);
   const pageUrl = created.url || notionPageUrl(pageId);
   documentLog.info(`Created database page: ${pageTitle}`);
+  recordPageChange({ action: "Created", title: pageTitle, url: pageUrl });
   documentLog.info(`Page URL: ${pageUrl}`);
 
   databaseState.entries.set(documentPath, {
@@ -508,6 +517,7 @@ async function syncDocumentToPage(
           await updatePageContent(context.notion, pageId, pageTitle, blocks, documentLog);
           pageUrl = notionPageUrl(pageId);
           documentLog.info(`Updated page: ${pageTitle}`);
+          recordPageChange({ action: "Updated", title: pageTitle, url: pageUrl });
         } catch (error) {
           if (!isNotionArchivedError(error) && !isNotionNotFoundError(error)) {
             throw error;
@@ -526,6 +536,7 @@ async function syncDocumentToPage(
     syncState.childPageIdsByTitle.set(pageTitle, pageId);
     pageUrl = created.url || notionPageUrl(pageId);
     documentLog.info(`Created page: ${pageTitle}`);
+    recordPageChange({ action: "Created", title: pageTitle, url: pageUrl });
     documentLog.info(`Page URL: ${pageUrl}`);
 
     syncState.entries.set(documentPath, {
@@ -664,7 +675,14 @@ async function didRemoveStaleSyncStateEntries(
       staleLog.info(
         "Markdown file no longer exists. Archiving the mapped Notion page and removing the stale sync state record.",
       );
-      await archivePageIfPresent(notion, normalizedPageId, staleLog);
+      const archiveResult = await archivePageIfPresent(notion, normalizedPageId, staleLog);
+      if (archiveResult === "archived") {
+        recordPageChange({
+          action: "Archived",
+          title: staleEntry.title ?? stalePath,
+          url: notionPageUrl(normalizedPageId),
+        });
+      }
     }
     syncStateEntries.delete(stalePath);
     isRemovedEntries = true;
