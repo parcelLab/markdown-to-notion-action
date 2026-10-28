@@ -4,9 +4,6 @@ on:
   release:
     types:
       - published
-  push:
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
@@ -19,7 +16,7 @@ permissions:
 jobs:
   update-major-tag:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.release.prerelease == false }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -28,7 +25,7 @@ jobs:
       - name: Extract major version
         id: version
         env:
-          TAG_NAME: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.event.release.tag_name }}
         run: |
           echo "Resolved tag: $TAG_NAME"
           if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
