@@ -5,6 +5,9 @@
   "license": "MIT",
   "type": "module",
   "main": "src/main.ts",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "start": "tsx src/main.ts",
     "lint": "eslint . --ext .ts",
