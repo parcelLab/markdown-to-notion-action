@@ -8,7 +8,7 @@ This file is optimized for AI agents working on this repository. It describes th
 
 ## Runtime Shape
 
-- `action.yml` defines a composite action that sets up Node 22, installs project dependencies in the action checkout, and runs `npx tsx src/main.ts`.
+- `action.yml` defines a composite action that sets up Node 26, installs project dependencies in the action checkout, and runs `npx tsx src/main.ts`.
 - The action runs inside the caller workflow workspace, so file paths and Git operations must resolve against `GITHUB_WORKSPACE`, not the action repository path.
 - `src/main.ts` is the orchestration layer. Keep it thin when possible; move reusable behavior into focused modules.
 - Notion API calls go through `notionRequest()` in `src/notion-api.ts` so rate-limit retry behavior stays consistent.
