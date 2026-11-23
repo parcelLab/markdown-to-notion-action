@@ -7,6 +7,12 @@ on:
 
 jobs:
   release:
-    uses: parcelLab/ci/.github/workflows/release.yaml@v9
-    secrets:
-      repoAccessToken: ${{ secrets.REPO_ACCESS_TOKEN_OPEN_SOURCE }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Create/Update Release Draft
+        uses: release-drafter/release-drafter@v7.3.0
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN_OPEN_SOURCE }}
