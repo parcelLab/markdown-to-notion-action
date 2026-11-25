@@ -94,7 +94,7 @@ Design for 500 Markdown files:
 
 ## Release
 
-- Releases use the shared `parcelLab/ci` release-drafter workflow (`.github/workflows/release.yml` → `parcelLab/ci/.github/workflows/release.yaml@v9`), configured by `.github/release-drafter.yml`.
+- Releases are drafted by a local release-drafter job (`.github/workflows/release.yml`), configured by `.github/release-drafter.yml`. This repo is public, so it can't call workflows from the private `parcelLab/ci` repo.
 - Every push to `main` creates or updates a draft release tagged with the next **patch** version. The version is chosen by a human when publishing: edit the draft, set the tag you actually want (minor/major), publish.
 - `.github/workflows/update-major-version-tag.yml` force-moves the floating major tag (`v3`) to the published release. It listens on `release: published` (skipping prereleases) and on manual `workflow_dispatch`.
 - The `release: published` event is suppressed for releases published by the default `GITHUB_TOKEN`, so releases must be published by a human or a PAT.
